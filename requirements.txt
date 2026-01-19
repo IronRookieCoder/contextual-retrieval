@@ -1,0 +1,32 @@
+# 上下文检索系统 - Python 依赖
+
+# Anthropic Claude API
+anthropic>=0.18.0
+
+# Voyage AI 嵌入 API
+voyageai>=0.2.0
+
+# Cohere 重排序 API
+cohere>=5.0.0
+
+# Elasticsearch BM25 搜索
+elasticsearch>=8.0.0
+
+# 配置管理
+python-dotenv>=1.0.0
+
+# 数据处理
+numpy>=1.24.0
+pandas>=2.0.0
+
+# 进度条
+tqdm>=4.65.0
+
+# 测试框架
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# 代码质量
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.0.0
