@@ -25,6 +25,7 @@ from .hybrid_search import HybridSearchEngine
 from .reranking import Reranker, JinaReranker, CohereReranker
 from .evaluation import Evaluator, Metrics
 from .data_generator import DataGenerator
+from .real_data_loader import DocumentLoader
 
 __all__ = [
     "Config",
@@ -38,4 +39,5 @@ __all__ = [
     "Evaluator",
     "Metrics",
     "DataGenerator",
+    "DocumentLoader",
 ]

@@ -28,59 +28,36 @@ class Metrics:
     """
 
     @staticmethod
+    def _extract_content(doc: Dict[str, Any]) -> str:
+        """从检索结果中提取内容，兼容 base / contextual / hybrid 三种格式"""
+        if "metadata" in doc:
+            return (doc["metadata"].get("original_content")
+                    or doc["metadata"].get("content")
+                    or "").strip()
+        elif "chunk" in doc:
+            return (doc["chunk"].get("original_content")
+                    or doc["chunk"].get("content")
+                    or "").strip()
+        return doc.get("content", "").strip()
+
+    @staticmethod
     def pass_at_k(
         retrieved_docs: List[Dict[str, Any]],
         golden_contents: List[str],
         k: int
     ) -> float:
-        """
-        计算 Pass@k
-
-        Pass@k 检查黄金文档是否出现在前 k 个检索结果中。
-
-        参数:
-            retrieved_docs: 检索到的文档列表
-            golden_contents: 黄金内容列表
-            k: 前 k 个结果
-
-        返回:
-            Pass@k 分数（0-1 之间）
-
-        示例:
-            >>> score = Metrics.pass_at_k(results, golden_contents, k=10)
-            >>> print(f"Pass@10: {score:.2%}")
-        """
         if not golden_contents:
             return 0.0
 
-        # 获取前 k 个结果
         top_k = retrieved_docs[:k]
 
-        # 检查有多少个黄金内容在前 k 个结果中
         chunks_found = 0
         for golden_content in golden_contents:
             for doc in top_k:
-                # 提取内容
-                if "metadata" in doc:
-                    retrieved_content = (
-                        doc["metadata"]
-                        .get("original_content", "")
-                        .strip()
-                    )
-                elif "chunk" in doc:
-                    retrieved_content = (
-                        doc["chunk"]
-                        .get("original_content", "")
-                        .strip()
-                    )
-                else:
-                    retrieved_content = doc.get("content", "").strip()
-
-                if retrieved_content == golden_content.strip():
+                if Metrics._extract_content(doc) == golden_content.strip():
                     chunks_found += 1
                     break
 
-        # 计算 Pass@k
         return chunks_found / len(golden_contents)
 
     @staticmethod
@@ -89,39 +66,12 @@ class Metrics:
         golden_contents: List[str],
         k: int
     ) -> float:
-        """
-        计算 Precision@k
-
-        Precision@k = (相关文档数) / k
-
-        参数:
-            retrieved_docs: 检索到的文档列表
-            golden_contents: 黄金内容列表
-            k: 前 k 个结果
-
-        返回:
-            Precision@k 分数（0-1 之间）
-        """
         top_k = retrieved_docs[:k]
 
         relevant_count = 0
+        gc_stripped = [c.strip() for c in golden_contents]
         for doc in top_k:
-            if "metadata" in doc:
-                retrieved_content = (
-                    doc["metadata"]
-                    .get("original_content", "")
-                    .strip()
-                )
-            elif "chunk" in doc:
-                retrieved_content = (
-                    doc["chunk"]
-                    .get("original_content", "")
-                    .strip()
-                )
-            else:
-                retrieved_content = doc.get("content", "").strip()
-
-            if retrieved_content in [c.strip() for c in golden_contents]:
+            if Metrics._extract_content(doc) in gc_stripped:
                 relevant_count += 1
 
         return safe_divide(relevant_count, k)
@@ -132,39 +82,12 @@ class Metrics:
         golden_contents: List[str],
         k: int
     ) -> float:
-        """
-        计算 Recall@k
-
-        Recall@k = (前 k 个中的相关文档数) / (总相关文档数)
-
-        参数:
-            retrieved_docs: 检索到的文档列表
-            golden_contents: 黄金内容列表
-            k: 前 k 个结果
-
-        返回:
-            Recall@k 分数（0-1 之间）
-        """
         top_k = retrieved_docs[:k]
 
         relevant_in_top_k = 0
+        gc_stripped = [c.strip() for c in golden_contents]
         for doc in top_k:
-            if "metadata" in doc:
-                retrieved_content = (
-                    doc["metadata"]
-                    .get("original_content", "")
-                    .strip()
-                )
-            elif "chunk" in doc:
-                retrieved_content = (
-                    doc["chunk"]
-                    .get("original_content", "")
-                    .strip()
-                )
-            else:
-                retrieved_content = doc.get("content", "").strip()
-
-            if retrieved_content in [c.strip() for c in golden_contents]:
+            if Metrics._extract_content(doc) in gc_stripped:
                 relevant_in_top_k += 1
 
         return safe_divide(relevant_in_top_k, len(golden_contents))
@@ -174,35 +97,9 @@ class Metrics:
         retrieved_docs: List[Dict[str, Any]],
         golden_contents: List[str]
     ) -> float:
-        """
-        计算平均倒数排名 (Mean Reciprocal Rank)
-
-        MRR = 1 / (第一个相关文档的排名)
-
-        参数:
-            retrieved_docs: 检索到的文档列表
-            golden_contents: 黄金内容列表
-
-        返回:
-            MRR 分数（0-1 之间）
-        """
+        gc_stripped = [c.strip() for c in golden_contents]
         for rank, doc in enumerate(retrieved_docs, start=1):
-            if "metadata" in doc:
-                retrieved_content = (
-                    doc["metadata"]
-                    .get("original_content", "")
-                    .strip()
-                )
-            elif "chunk" in doc:
-                retrieved_content = (
-                    doc["chunk"]
-                    .get("original_content", "")
-                    .strip()
-                )
-            else:
-                retrieved_content = doc.get("content", "").strip()
-
-            if retrieved_content in [c.strip() for c in golden_contents]:
+            if Metrics._extract_content(doc) in gc_stripped:
                 return 1.0 / rank
 
         return 0.0

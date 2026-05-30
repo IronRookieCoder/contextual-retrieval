@@ -16,6 +16,7 @@ from .data_generator import DataGenerator
 from .evaluation import Evaluator
 from .hybrid_search import HybridSearchEngine
 from .bm25_search import ElasticsearchBM25
+from .real_data_loader import DocumentLoader
 from .reranking import JinaReranker
 from .vector_db import VectorDBImpl
 from .utils import Logger, Timer
@@ -181,6 +182,117 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
     # 显示报告
     print()
     print(evaluator.generate_report(results, args.method))
+
+    return 0
+
+
+def cmd_evaluate_real(args: argparse.Namespace) -> int:
+    """
+    使用真实文档评估检索效果
+
+    从指定目录加载真实文档，构建基础（Base）和上下文增强（Contextual）
+    两种向量索引，对比分析检索效果差异。
+    """
+    config = Config.from_env()
+    config.validate()
+    config.ensure_directories()
+
+    loader = DocumentLoader(config)
+    evaluator = Evaluator(config)
+
+    # Step 1: 加载文档、分块、生成查询
+    print("=" * 60)
+    print("📂 加载文档并生成查询...")
+    print("=" * 60)
+
+    dataset, queries = loader.process_directory(
+        args.data_dir,
+        num_per_doc=args.queries_per_doc,
+    )
+    total_chunks = sum(len(doc["chunks"]) for doc in dataset)
+    total_chars = sum(len(doc["content"]) for doc in dataset)
+    print(f"  {len(dataset)} 个文档, {total_chunks} 个块, {total_chars:,} 字符")
+    print(f"  {len(queries)} 个查询")
+
+    # 保存数据集和查询
+    dataset_path = loader.save_dataset(dataset, args.name)
+    queries_path = loader.save_queries(queries, args.name)
+    print(f"  数据集: {dataset_path}")
+    print(f"  查询集: {queries_path}")
+
+    # Step 2: 构建基础向量索引
+    if not args.contextual_only:
+        print("\n" + "=" * 60)
+        print("🔄 构建基础向量索引 (Base RAG)...")
+        print("=" * 60)
+
+        base_db = VectorDBImpl(f"{args.name}_base", config)
+        with Timer("Base 索引"):
+            base_db.load_data(dataset)
+        base_stats = base_db.get_stats()
+        print(f"  嵌入数: {base_stats['num_embeddings']}, 维度: {base_stats['embedding_dim']}")
+
+    # Step 3: 构建上下文向量索引
+    if not args.base_only:
+        print("\n" + "=" * 60)
+        print("🔄 构建上下文向量索引 (Contextual RAG)...")
+        print("=" * 60)
+
+        contextual_db = ContextualVectorDB(f"{args.name}_contextual", config)
+        with Timer("Contextual 索引"):
+            contextual_db.load_data(dataset, parallel_threads=args.parallel_threads)
+        contextual_stats = contextual_db.get_stats()
+        token_stats = contextual_db.get_token_stats()
+        print(f"  嵌入数: {contextual_stats['num_embeddings']}, 维度: {contextual_stats['embedding_dim']}")
+        print(f"  DeepSeek 输入 tokens: {token_stats['input_tokens']:,}")
+        print(f"  DeepSeek 输出 tokens: {token_stats['output_tokens']:,}")
+
+    # Step 4: 评估
+    print("\n" + "=" * 60)
+    print("📊 执行评估...")
+    print("=" * 60)
+
+    queries_data = evaluator.load_queries(str(queries_path))
+    k_values = args.k_values
+    results = {}
+
+    if not args.contextual_only:
+        results["基础 RAG"] = evaluator.evaluate(
+            queries_data,
+            lambda q, k: base_db.search(q, k=k),
+            k_values=k_values,
+            method_name="基础 RAG",
+        )
+
+    if not args.base_only:
+        results["上下文增强 RAG"] = evaluator.evaluate(
+            queries_data,
+            lambda q, k: contextual_db.search(q, k=k),
+            k_values=k_values,
+            method_name="上下文增强 RAG",
+        )
+
+    # Step 5: 对比报告
+    print(evaluator.compare_methods(results, k_values=k_values))
+
+    # Step 6: 总结
+    print("=" * 60)
+    print("📋 总结")
+    print("=" * 60)
+    for k in k_values:
+        parts = []
+        for method_name, method_results in results.items():
+            pct = method_results[k]["pass_at_k"] * 100
+            parts.append(f"{method_name}={pct:.1f}%")
+        print(f"  Pass@{k:2d}:  {'  '.join(parts)}")
+
+    if not args.base_only:
+        print(f"\n  DeepSeek 上下文生成成本:")
+        print(f"    输入: {token_stats['input_tokens']:,} tokens")
+        print(f"    输出: {token_stats['output_tokens']:,} tokens")
+        input_cost = token_stats['input_tokens'] / 1_000_000 * 0.14
+        output_cost = token_stats['output_tokens'] / 1_000_000 * 0.55
+        print(f"    预估费用: ${input_cost + output_cost:.4f}")
 
     return 0
 
@@ -368,6 +480,51 @@ def main() -> int:
         help="k 值列表（默认: 5 10 20）"
     )
 
+    # evaluate-real 命令
+    parser_eval_real = subparsers.add_parser(
+        "evaluate-real",
+        help="使用真实文档评估检索效果"
+    )
+    parser_eval_real.add_argument(
+        "--data-dir",
+        required=True,
+        help="文档目录路径"
+    )
+    parser_eval_real.add_argument(
+        "--name",
+        default="real_eval",
+        help="评估名称（默认: real_eval）"
+    )
+    parser_eval_real.add_argument(
+        "--parallel-threads",
+        type=int,
+        default=5,
+        help="上下文生成并行线程数（默认: 5）"
+    )
+    parser_eval_real.add_argument(
+        "--queries-per-doc",
+        type=int,
+        default=3,
+        help="每个文档生成的查询数（默认: 3）"
+    )
+    parser_eval_real.add_argument(
+        "--k-values",
+        type=int,
+        nargs="+",
+        default=[5, 10, 20],
+        help="评估的 k 值列表（默认: 5 10 20）"
+    )
+    parser_eval_real.add_argument(
+        "--base-only",
+        action="store_true",
+        help="仅评估基础 RAG"
+    )
+    parser_eval_real.add_argument(
+        "--contextual-only",
+        action="store_true",
+        help="仅评估上下文增强 RAG"
+    )
+
     # hybrid-search 命令
     parser_hybrid = subparsers.add_parser(
         "hybrid-search",
@@ -415,6 +572,7 @@ def main() -> int:
         "search": cmd_search,
         "evaluate": cmd_evaluate,
         "hybrid-search": cmd_hybrid_search,
+        "evaluate-real": cmd_evaluate_real,
     }
 
     handler = command_handlers.get(args.command)
