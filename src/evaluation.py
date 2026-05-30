@@ -274,7 +274,7 @@ class Evaluator:
         for doc_uuid, chunk_index in golden_chunk_uuids:
             # 查找文档
             golden_doc = next(
-                (doc for doc in golden_documents if doc.get("uuid") == doc_uuid),
+                (doc for doc in golden_documents if doc.get("uuid") == doc_uuid or doc.get("original_uuid") == doc_uuid),
                 None,
             )
 
@@ -289,7 +289,7 @@ class Evaluator:
                 (
                     chunk
                     for chunk in golden_doc.get("chunks", [])
-                    if chunk.get("index") == chunk_index
+                    if chunk.get("index") == chunk_index or chunk.get("original_index") == chunk_index
                 ),
                 None,
             )

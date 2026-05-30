@@ -136,6 +136,7 @@ class DataGenerator:
 
             doc = {
                 "doc_id": f"doc_{doc_id:04d}",
+                "uuid": f"uuid_{doc_id:04d}",
                 "original_uuid": f"uuid_{doc_id:04d}",
                 "content": doc_content,
                 "theme": theme,
@@ -225,6 +226,7 @@ class DataGenerator:
                 chunk_content = "\n".join(current_chunk)
                 chunks.append({
                     "chunk_id": f"chunk_{chunk_index:04d}",
+                    "index": chunk_index,
                     "original_index": chunk_index,
                     "content": chunk_content,
                 })
