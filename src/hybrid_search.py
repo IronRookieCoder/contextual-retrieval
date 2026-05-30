@@ -184,21 +184,19 @@ class HybridSearchEngine:
         final_results = []
         for (doc_id, original_index), score in sorted_chunks[:k]:
             chunk_info = chunk_data[(doc_id, original_index)]
+            chunk = chunk_info["chunk"]
 
-            # 如果是 BM25 结果，需要从 metadata 中提取内容
-            if "metadata" not in chunk_info["chunk"]:
-                # BM25 结果格式
-                chunk_info["chunk"] = {
-                    "doc_id": chunk_info["chunk"]["doc_id"],
-                    "original_index": chunk_info["chunk"]["original_index"],
-                    "content": chunk_info["chunk"]["content"],
-                    "contextualized_content": chunk_info["chunk"].get(
-                        "contextualized_content", ""
-                    ),
+            # 统一字段名：BM25 用 content，metadata 用 original_content
+            if "metadata" not in chunk:
+                chunk = {
+                    "doc_id": chunk.get("doc_id", ""),
+                    "original_index": chunk.get("original_index", 0),
+                    "original_content": chunk.get("content", chunk.get("original_content", "")),
+                    "contextualized_content": chunk.get("contextualized_content", ""),
                 }
 
             final_results.append({
-                "chunk": chunk_info["chunk"],
+                "chunk": chunk,
                 "score": score,
                 "from_semantic": chunk_info["from_semantic"],
                 "from_bm25": chunk_info["from_bm25"],

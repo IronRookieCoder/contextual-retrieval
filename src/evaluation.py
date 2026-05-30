@@ -506,11 +506,12 @@ class Evaluator:
             >>> retrieval_func = evaluator.create_hybrid_retrieval_func(engine)
             >>> results = evaluator.evaluate(queries, retrieval_func)
         """
-        def retrieval_func(query: str, db, k: int) -> List[Dict[str, Any]]:
+        def retrieval_func(query: str, k: int) -> List[Dict[str, Any]]:
             """
             混合搜索检索函数
 
-            注意: db 参数会被忽略，实际使用 hybrid_engine 中的数据库
+            query: 查询文本
+            k: 返回结果数量
             """
             return hybrid_engine.search(query, k=k)
 

@@ -139,7 +139,8 @@ class ElasticsearchBM25:
 
         # 执行批量索引
         with Timer(f"索引 {len(actions)} 个文档"):
-            success, failed = bulk(self.es_client, actions)
+            success, errors = bulk(self.es_client, actions)
+            failed = len(errors) if isinstance(errors, list) else errors
 
         # 刷新索引
         self.es_client.indices.refresh(index=self.index_name)
