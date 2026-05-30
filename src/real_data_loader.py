@@ -78,10 +78,10 @@ class DocumentLoader:
     ):
         self.config = config or Config.from_env()
 
-        self.include_ext = include_ext or self.DEFAULT_INCLUDE_EXT
-        self.exclude_files = exclude_files or self.DEFAULT_EXCLUDE_FILES
-        self.min_chunk_size = min_chunk_size or self.DEFAULT_MIN_CHUNK_SIZE
-        self.max_chunk_size = max_chunk_size or self.DEFAULT_MAX_CHUNK_SIZE
+        self.include_ext = include_ext if include_ext is not None else self.DEFAULT_INCLUDE_EXT
+        self.exclude_files = exclude_files if exclude_files is not None else self.DEFAULT_EXCLUDE_FILES
+        self.min_chunk_size = min_chunk_size if min_chunk_size is not None else self.DEFAULT_MIN_CHUNK_SIZE
+        self.max_chunk_size = max_chunk_size if max_chunk_size is not None else self.DEFAULT_MAX_CHUNK_SIZE
 
         self.logger = Logger("DocumentLoader")
         self._rng = random.Random(42)  # 固定种子保证可重复性

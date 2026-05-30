@@ -197,7 +197,10 @@ def cmd_evaluate_real(args: argparse.Namespace) -> int:
     config.validate()
     config.ensure_directories()
 
-    loader = DocumentLoader(config)
+    loader = DocumentLoader(
+        config,
+        exclude_files=set() if args.include_agents else None,
+    )
     evaluator = Evaluator(config)
 
     # Step 1: 加载文档、分块、生成查询
@@ -247,6 +250,30 @@ def cmd_evaluate_real(args: argparse.Namespace) -> int:
         print(f"  DeepSeek 输入 tokens: {token_stats['input_tokens']:,}")
         print(f"  DeepSeek 输出 tokens: {token_stats['output_tokens']:,}")
 
+    # Step 3.5: 构建 BM25 索引（混合搜索用）
+    bm25_engine = None
+    if args.hybrid and not args.base_only:
+        print("\n" + "=" * 60)
+        print("🔍 构建 BM25 索引...")
+        print("=" * 60)
+
+        # 从上下文字典库元数据构建 BM25 文档
+        bm25_docs = []
+        for meta in contextual_db.metadata:
+            bm25_docs.append({
+                "original_content": meta.get("original_content", meta.get("content", "")),
+                "contextualized_content": meta.get("contextualized_content", ""),
+                "doc_id": meta["doc_id"],
+                "chunk_id": meta["chunk_id"],
+                "original_index": meta["original_index"],
+            })
+
+        bm25_engine = ElasticsearchBM25(f"{args.name}_bm25", config)
+        with Timer("BM25 索引"):
+            bm25_engine.index_documents(bm25_docs)
+        stats = bm25_engine.get_index_stats()
+        print(f"  BM25 索引完成: {stats['document_count']} 个文档, {stats['store_size'] / 1024:.1f} KB")
+
     # Step 4: 评估
     print("\n" + "=" * 60)
     print("📊 执行评估...")
@@ -272,6 +299,23 @@ def cmd_evaluate_real(args: argparse.Namespace) -> int:
             method_name="上下文增强 RAG",
         )
 
+    if args.hybrid and bm25_engine is not None:
+        # 创建混合搜索引擎
+        hybrid_engine = HybridSearchEngine(
+            contextual_db,
+            bm25_engine,
+            semantic_weight=args.semantic_weight,
+            bm25_weight=args.bm25_weight,
+            config=config,
+        )
+        print(f"\n  评估 3/3: 混合搜索 (Contextual+BM25, 权重 {args.semantic_weight}:{args.bm25_weight})")
+        results["混合搜索 (+BM25)"] = evaluator.evaluate_hybrid(
+            queries_data,
+            hybrid_engine,
+            k_values=k_values,
+            method_name=f"混合搜索 (+BM25)",
+        )
+
     # Step 5: 对比报告
     print(evaluator.compare_methods(results, k_values=k_values))
 
@@ -293,6 +337,11 @@ def cmd_evaluate_real(args: argparse.Namespace) -> int:
         input_cost = token_stats['input_tokens'] / 1_000_000 * 0.14
         output_cost = token_stats['output_tokens'] / 1_000_000 * 0.55
         print(f"    预估费用: ${input_cost + output_cost:.4f}")
+
+    # 清理 BM25 索引
+    if bm25_engine is not None:
+        bm25_engine.delete_index()
+        print("\n  BM25 索引已清理")
 
     return 0
 
@@ -523,6 +572,28 @@ def main() -> int:
         "--contextual-only",
         action="store_true",
         help="仅评估上下文增强 RAG"
+    )
+    parser_eval_real.add_argument(
+        "--hybrid",
+        action="store_true",
+        help="同时评估混合搜索 (Contextual + BM25)"
+    )
+    parser_eval_real.add_argument(
+        "--semantic-weight",
+        type=float,
+        default=0.8,
+        help="混合搜索语义权重（默认: 0.8，需与 --bm25-weight 之和为 1.0）"
+    )
+    parser_eval_real.add_argument(
+        "--bm25-weight",
+        type=float,
+        default=0.2,
+        help="混合搜索 BM25 权重（默认: 0.2，需与 --semantic-weight 之和为 1.0）"
+    )
+    parser_eval_real.add_argument(
+        "--include-agents",
+        action="store_true",
+        help="包含 AGENTS.md 等默认排除的文档（匹配原始评估的 13 篇文档）"
     )
 
     # hybrid-search 命令
