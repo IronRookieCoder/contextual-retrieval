@@ -12,6 +12,7 @@
 - **混合搜索引擎**: 结合语义搜索和 BM25，使用 RRF 算法合并结果
 - **Jina AI 重排序**: 使用 Jina Reranker v3 精细化结果排序，131K 上下文窗口
 - **完整评估系统**: 支持 Pass@k、Precision@k、Recall@k、MRR 等指标
+- **真实文档评估**: 从文件系统加载文档，自动分块、生成查询并评测
 
 ### 技术亮点
 
@@ -147,11 +148,32 @@ python -m src.cli hybrid-search \
 ### 5. 评估性能
 
 ```bash
+# 评估现有索引
 python -m src.cli evaluate \
   --name contextual_db \
   --method contextual \
   --queries data/sample_queries.jsonl \
   --k-values 5 10 20
+
+# 从真实文档一键评估（加载→分块→生成查询→建索引→评测）
+python -m src.cli evaluate-real \
+  --data-dir "./my_docs" \
+  --name my_eval \
+  --queries-per-doc 3 \
+  --k-values 5 10 20
+
+# 同时评估混合搜索（+BM25），需先启动 Elasticsearch
+python -m src.cli evaluate-real \
+  --data-dir "./my_docs" \
+  --name my_eval \
+  --hybrid \
+  --semantic-weight 0.8 \
+  --bm25-weight 0.2
+
+# 包含 AGENTS.md 等默认排除的文件
+python -m src.cli evaluate-real \
+  --data-dir "./my_docs" \
+  --include-agents
 ```
 
 ## Python API 使用
@@ -293,6 +315,7 @@ contextual-retrieval/
 │   ├── reranking.py       # Jina AI 重排序器
 │   ├── evaluation.py      # 评估系统
 │   ├── data_generator.py  # 数据生成器
+│   ├── real_data_loader.py # 真实文档加载器（分块、查询生成）
 │   └── cli.py             # 命令行接口
 ├── tests/                 # 测试套件
 ├── examples/              # 使用示例
