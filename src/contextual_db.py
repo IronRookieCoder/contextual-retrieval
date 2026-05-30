@@ -1,8 +1,7 @@
 """
 上下文向量数据库模块
 
-扩展基础向量数据库，使用 Claude 生成块级上下文描述，
-通过提示缓存优化成本。
+扩展基础向量数据库，使用 DeepSeek 生成块级上下文描述。
 """
 
 import json
@@ -13,9 +12,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple
 
-import anthropic
 import numpy as np
-import voyageai
+from openai import OpenAI
 from tqdm import tqdm
 
 from .config import Config
@@ -31,28 +29,21 @@ class TokenCounters:
     属性:
         input: 输入 token 总数
         output: 输出 token 总数
-        cache_read: 从缓存读取的 token 数
-        cache_creation: 写入缓存的 token 数
     """
     input: int = 0
     output: int = 0
-    cache_read: int = 0
-    cache_creation: int = 0
 
     def total_input(self) -> int:
-        """总输入 token 数（包括缓存）"""
-        return self.input + self.cache_read + self.cache_creation
+        """总输入 token 数"""
+        return self.input
 
     def savings_percentage(self) -> float:
-        """缓存节省百分比"""
-        total = self.total_input()
-        return (self.cache_read / total * 100) if total > 0 else 0.0
+        """DeepSeek 不支持提示缓存，始终返回 0"""
+        return 0.0
 
     def __str__(self) -> str:
         return (
-            f"TokenCounters(input={self.input}, output={self.output}, "
-            f"cache_read={self.cache_read}, cache_creation={self.cache_creation}, "
-            f"savings={self.savings_percentage():.2f}%)"
+            f"TokenCounters(input={self.input}, output={self.output})"
         )
 
 
@@ -60,10 +51,9 @@ class ContextualVectorDB(VectorDBImpl):
     """
     上下文向量数据库
 
-    使用 Claude 生成块级上下文描述，通过提示缓存优化成本。
+    使用 DeepSeek 生成块级上下文描述。
 
     关键特性:
-        - 提示缓存：60-80% 成本节省
         - 并行处理：多线程加速上下文生成
         - Token 统计：实时跟踪成本
 
@@ -98,9 +88,10 @@ Answer only with the succinct context and nothing else.
     def __init__(self, name: str, config: Config = None):
         super().__init__(name, config)
 
-        # 初始化 Anthropic 客户端
-        self.anthropic_client = anthropic.Anthropic(
-            api_key=self.config.ANTHROPIC_API_KEY
+        # 初始化 DeepSeek 客户端（OpenAI 兼容）
+        self.llm_client = OpenAI(
+            api_key=self.config.DEEPSEEK_API_KEY,
+            base_url=self.config.DEEPSEEK_BASE_URL,
         )
 
         # Token 统计
@@ -121,9 +112,9 @@ Answer only with the succinct context and nothing else.
         self,
         doc: str,
         chunk: str
-    ) -> Tuple[str, anthropic.types.Usage]:
+    ) -> Tuple[str, dict]:
         """
-        使用 Claude 生成块的上下文描述
+        使用 DeepSeek 生成块的上下文描述
 
         参数:
             doc: 完整文档内容
@@ -137,28 +128,28 @@ Answer only with the succinct context and nothing else.
             >>> print(context)
             >>> print(usage)
         """
-        response = self.anthropic_client.messages.create(
-            model=self.config.ANTHROPIC_MODEL,
-            max_tokens=1000,
-            temperature=0.0,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": self.DOCUMENT_CONTEXT_PROMPT.format(doc_content=doc),
-                        "cache_control": {"type": "ephemeral"}
-                    },
-                    {
-                        "type": "text",
-                        "text": self.CHUNK_CONTEXT_PROMPT.format(chunk_content=chunk),
-                    },
-                ],
-            }],
-            extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"}
+        # 构造完整 prompt
+        prompt = (
+            self.DOCUMENT_CONTEXT_PROMPT.format(doc_content=doc)
+            + self.CHUNK_CONTEXT_PROMPT.format(chunk_content=chunk)
         )
 
-        return response.content[0].text, response.usage
+        response = self.llm_client.chat.completions.create(
+            model=self.config.DEEPSEEK_MODEL,
+            max_tokens=1000,
+            temperature=0.0,
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        content = response.choices[0].message.content
+        usage = {
+            "input_tokens": response.usage.prompt_tokens,
+            "output_tokens": response.usage.completion_tokens,
+            "cache_read_input_tokens": getattr(response.usage, "prompt_cache_hit_tokens", 0),
+            "cache_creation_input_tokens": getattr(response.usage, "prompt_cache_miss_tokens", 0),
+        }
+
+        return content, usage
 
     @retry_with_backoff(max_retries=3, exceptions=(Exception,))
     def load_data(
@@ -211,10 +202,8 @@ Answer only with the succinct context and nothing else.
 
                 # 线程安全地更新 token 计数
                 with self.token_lock:
-                    self.token_counts.input += usage.input_tokens
-                    self.token_counts.output += usage.output_tokens
-                    self.token_counts.cache_read += usage.cache_read_input_tokens
-                    self.token_counts.cache_creation += usage.cache_creation_input_tokens
+                    self.token_counts.input += usage["input_tokens"]
+                    self.token_counts.output += usage["output_tokens"]
 
                 return {
                     "text_to_embed": f"{chunk['content']}\n\n{contextualized_text}",
@@ -271,19 +260,11 @@ Answer only with the succinct context and nothing else.
         self.save_db()
 
         # 打印统计信息
-        total_tokens = self.token_counts.total_input()
         self.logger.logger.info(
             f"上下文向量数据库加载并保存完成。处理的总块数: {len(texts_to_embed)}"
         )
-        self.logger.logger.info(f"总输入 token（不含缓存）: {self.token_counts.input}")
+        self.logger.logger.info(f"总输入 token: {self.token_counts.input}")
         self.logger.logger.info(f"总输出 token: {self.token_counts.output}")
-        self.logger.logger.info(f"写入缓存的 token: {self.token_counts.cache_creation}")
-        self.logger.logger.info(f"从缓存读取的 token: {self.token_counts.cache_read}")
-        self.logger.logger.info(
-            f"提示缓存节省: {self.token_counts.savings_percentage():.2f}% "
-            "的输入 token 来自缓存"
-        )
-        self.logger.logger.info("从缓存读取的 token 享受 90% 折扣！")
 
     def get_token_stats(self) -> Dict[str, Any]:
         """
@@ -295,10 +276,7 @@ Answer only with the succinct context and nothing else.
         return {
             "input_tokens": self.token_counts.input,
             "output_tokens": self.token_counts.output,
-            "cache_read_tokens": self.token_counts.cache_read,
-            "cache_creation_tokens": self.token_counts.cache_creation,
             "total_input_tokens": self.token_counts.total_input(),
-            "cache_savings_percentage": self.token_counts.savings_percentage(),
         }
 
     def reset_token_counts(self) -> None:

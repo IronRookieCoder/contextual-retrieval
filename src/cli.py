@@ -16,7 +16,7 @@ from .data_generator import DataGenerator
 from .evaluation import Evaluator
 from .hybrid_search import HybridSearchEngine
 from .bm25_search import ElasticsearchBM25
-from .reranking import CohereReranker
+from .reranking import JinaReranker
 from .vector_db import VectorDBImpl
 from .utils import Logger, Timer
 
@@ -95,9 +95,6 @@ def cmd_index(args: argparse.Namespace) -> int:
         print(f"\nToken 统计:")
         print(f"  输入 tokens: {token_stats['input_tokens']:,}")
         print(f"  输出 tokens: {token_stats['output_tokens']:,}")
-        print(f"  缓存读取: {token_stats['cache_read_tokens']:,}")
-        print(f"  缓存写入: {token_stats['cache_creation_tokens']:,}")
-        print(f"  缓存节省: {token_stats['cache_savings_percentage']:.2f}%")
 
     return 0
 

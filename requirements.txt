@@ -1,13 +1,10 @@
 # 上下文检索系统 - Python 依赖
 
-# Anthropic Claude API
-anthropic>=0.18.0
+# DeepSeek API（OpenAI 兼容）— 上下文生成
+openai>=1.0.0
 
-# Voyage AI 嵌入 API
-voyageai>=0.2.0
-
-# Cohere 重排序 API
-cohere>=5.0.0
+# Jina AI API（嵌入 + 重排序）— REST 调用
+requests>=2.28.0
 
 # Elasticsearch BM25 搜索
 elasticsearch>=8.0.0

@@ -1,14 +1,14 @@
 """
 重排序器模块
 
-使用 Cohere Rerank API 对搜索结果进行精细排序。
+使用 Jina AI Rerank API 对搜索结果进行精细排序。
 """
 
 import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
-import cohere
+import requests
 
 from .config import Config
 from .utils import APIError, Logger, retry_with_backoff
@@ -38,11 +38,11 @@ class Reranker(ABC):
         pass
 
 
-class CohereReranker(Reranker):
+class JinaReranker(Reranker):
     """
-    Cohere 重排序器
+    Jina AI 重排序器
 
-    使用 Cohere Rerank API 对搜索结果进行精细排序。
+    使用 Jina Rerank API 对搜索结果进行精细排序。
 
     参数:
         model: 模型名称（可选，默认使用配置值）
@@ -50,11 +50,14 @@ class CohereReranker(Reranker):
         config: 配置对象（可选）
 
     示例:
-        >>> reranker = CohereReranker()
+        >>> reranker = JinaReranker()
         >>> results = reranker.rerank(query, documents, top_n=10)
         >>> for r in results:
         ...     print(f"索引: {r['index']}, 分数: {r['score']:.4f}")
     """
+
+    # Jina AI Reranker API endpoint
+    JINA_RERANK_URL = "https://api.jina.ai/v1/rerank"
 
     def __init__(
         self,
@@ -63,16 +66,19 @@ class CohereReranker(Reranker):
         config: Config = None,
     ):
         self.config = config or Config.from_env()
-        self.model = model or self.config.COHERE_RERANK_MODEL
+        self.model = model or self.config.JINA_RERANKER_MODEL
         self.rate_limit_delay = (
             rate_limit_delay or self.config.RERANK_RATE_LIMIT_DELAY
         )
 
-        # 初始化 Cohere 客户端
-        self.client = cohere.Client(api_key=self.config.COHERE_API_KEY)
+        # Jina API 认证头
+        self._jina_headers = {
+            "Authorization": f"Bearer {self.config.JINA_API_KEY}",
+            "Content-Type": "application/json",
+        }
 
         # 日志
-        self.logger = Logger(f"CohereReranker.{model}")
+        self.logger = Logger(f"JinaReranker.{self.model}")
 
     @retry_with_backoff(max_retries=3, exceptions=(Exception,))
     def rerank(
@@ -99,7 +105,7 @@ class CohereReranker(Reranker):
             APIError: API 调用失败时
 
         示例:
-            >>> reranker = CohereReranker()
+            >>> reranker = JinaReranker()
             >>> results = reranker.rerank(
             ...     "如何实现认证?",
             ...     ["文档1", "文档2", "文档3"],
@@ -118,24 +124,40 @@ class CohereReranker(Reranker):
             )
             top_n = len(documents)
 
-        # 调用 Cohere Rerank API
-        response = self.client.rerank(
-            model=self.model,
-            query=query,
-            documents=documents,
-            top_n=top_n,
+        # 调用 Jina Rerank API
+        payload = {
+            "model": self.model,
+            "query": query,
+            "documents": documents,
+            "top_n": top_n,
+            "return_documents": False,
+        }
+
+        response = requests.post(
+            self.JINA_RERANK_URL,
+            headers=self._jina_headers,
+            json=payload,
+            timeout=30,
         )
+
+        if response.status_code != 200:
+            raise APIError(
+                f"Jina Rerank API 返回错误 {response.status_code}: "
+                f"{response.text[:500]}"
+            )
+
+        data = response.json()
 
         # 速率限制
         time.sleep(self.rate_limit_delay)
 
-        # 解析结果
+        # 解析结果: {"results": [{"index": 0, "relevance_score": 0.9}, ...]}
         results = []
-        for r in response.results:
+        for r in data["results"]:
             results.append({
-                "index": r.index,
-                "score": r.relevance_score,
-                "text": documents[r.index] if r.index < len(documents) else None,
+                "index": r["index"],
+                "score": r["relevance_score"],
+                "text": documents[r["index"]] if r["index"] < len(documents) else None,
             })
 
         self.logger.logger.debug(
@@ -255,3 +277,7 @@ class CohereReranker(Reranker):
         )
 
         return reranked_results
+
+
+# 向后兼容的别名
+CohereReranker = JinaReranker

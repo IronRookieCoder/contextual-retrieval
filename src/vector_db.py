@@ -1,7 +1,7 @@
 """
 向量数据库模块
 
-提供基础的向量存储和相似度搜索功能，使用 Voyage AI 生成嵌入。
+提供基础的向量存储和相似度搜索功能，使用 Jina AI 生成嵌入。
 """
 
 import json
@@ -12,11 +12,11 @@ from functools import lru_cache
 from typing import Any, Dict, List
 
 import numpy as np
-import voyageai
+import requests
 from tqdm import tqdm
 
 from .config import Config
-from .utils import DatabaseError, Logger, Timer, retry_with_backoff
+from .utils import APIError, DatabaseError, Logger, Timer, retry_with_backoff
 
 
 class VectorDB(ABC):
@@ -65,7 +65,7 @@ class VectorDBImpl(VectorDB):
     """
     向量数据库实现类
 
-    使用 Voyage AI 生成嵌入，余弦相似度进行搜索，
+    使用 Jina AI 生成嵌入，余弦相似度进行搜索，
     支持 LRU 查询缓存和 pickle 持久化。
 
     参数:
@@ -78,12 +78,18 @@ class VectorDBImpl(VectorDB):
         >>> results = db.search("查询文本", k=10)
     """
 
+    # Jina AI Embeddings API endpoint
+    JINA_EMBEDDINGS_URL = "https://api.jina.ai/v1/embeddings"
+
     def __init__(self, name: str, config: Config = None):
         self.name = name
         self.config = config or Config.from_env()
 
-        # 初始化 Voyage AI 客户端
-        self.client = voyageai.Client(api_key=self.config.VOYAGE_API_KEY)
+        # Jina API 认证头
+        self._jina_headers = {
+            "Authorization": f"Bearer {self.config.JINA_API_KEY}",
+            "Content-Type": "application/json",
+        }
 
         # 数据存储
         self.embeddings: List[np.ndarray] = []
@@ -101,6 +107,52 @@ class VectorDBImpl(VectorDB):
 
         # 日志
         self.logger = Logger(f"VectorDB.{name}")
+
+
+    def _call_jina_embeddings(
+        self,
+        texts: List[str],
+        task: str = "retrieval.passage"
+    ) -> List[np.ndarray]:
+        """
+        调用 Jina AI Embeddings API
+
+        参数:
+            texts: 待嵌入的文本列表
+            task: 任务类型（retrieval.passage 或 retrieval.query）
+
+        返回:
+            嵌入向量列表
+
+        抛出:
+            APIError: API 调用失败时
+        """
+        payload = {
+            "model": self.config.JINA_EMBEDDING_MODEL,
+            "input": texts,
+            "task": task,
+        }
+
+        response = requests.post(
+            self.JINA_EMBEDDINGS_URL,
+            headers=self._jina_headers,
+            json=payload,
+            timeout=60,
+        )
+
+        if response.status_code != 200:
+            raise APIError(
+                f"Jina Embeddings API 返回错误 {response.status_code}: "
+                f"{response.text[:500]}"
+            )
+
+        data = response.json()
+        # Jina 返回格式: {"data": [{"embedding": [...], "index": 0}, ...]}
+        embeddings = [
+            np.array(item["embedding"])
+            for item in sorted(data["data"], key=lambda x: x["index"])
+        ]
+        return embeddings
 
     @retry_with_backoff(max_retries=3, exceptions=(Exception,))
     def load_data(self, dataset: List[Dict[str, Any]]) -> None:
@@ -176,10 +228,9 @@ class VectorDBImpl(VectorDB):
                 batch = texts[i:i + batch_size]
 
                 with Timer(f"嵌入批次 {i // batch_size + 1}"):
-                    batch_embeddings = self.client.embed(
-                        batch,
-                        model=self.config.VOYAGE_MODEL
-                    ).embeddings
+                    batch_embeddings = self._call_jina_embeddings(
+                        batch, task="retrieval.passage"
+                    )
 
                 all_embeddings.extend(batch_embeddings)
                 pbar.update(len(batch))
@@ -210,10 +261,9 @@ class VectorDBImpl(VectorDB):
             self.logger.logger.debug(f"查询缓存命中: {query[:50]}...")
         else:
             # 生成查询嵌入
-            query_embedding = self.client.embed(
-                [query],
-                model=self.config.VOYAGE_MODEL
-            ).embeddings[0]
+            query_embedding = self._call_jina_embeddings(
+                [query], task="retrieval.query"
+            )[0]
 
             # 更新缓存（使用 LRU）
             if len(self.query_cache) >= 1000:

@@ -22,10 +22,14 @@ class Config:
     支持从环境变量和 .env 文件加载配置，并提供配置验证功能。
 
     环境变量:
-        ANTHROPIC_API_KEY: Anthropic Claude API 密钥
-        VOYAGE_API_KEY: Voyage AI API 密钥
-        COHERE_API_KEY: Cohere API 密钥
+        DEEPSEEK_API_KEY: DeepSeek API 密钥（上下文生成）
+        JINA_API_KEY: Jina AI API 密钥（嵌入 + 重排序）
         ELASTICSEARCH_URL: Elasticsearch 服务地址
+
+    向后兼容（可选）:
+        ANTHROPIC_API_KEY: 向后兼容，等同于 DEEPSEEK_API_KEY
+        VOYAGE_API_KEY: 向后兼容，等同于 JINA_API_KEY
+        COHERE_API_KEY: 向后兼容，等同于 JINA_API_KEY
 
     示例:
         >>> config = Config.from_env()
@@ -33,17 +37,22 @@ class Config:
     """
 
     # API 密钥（必需）
-    ANTHROPIC_API_KEY: str
-    VOYAGE_API_KEY: str
-    COHERE_API_KEY: str
+    DEEPSEEK_API_KEY: str = ""
+    JINA_API_KEY: str = ""
+
+    # 向后兼容字段
+    ANTHROPIC_API_KEY: str = ""
+    VOYAGE_API_KEY: str = ""
+    COHERE_API_KEY: str = ""
 
     # 服务地址（可选）
     ELASTICSEARCH_URL: str = "http://localhost:9200"
+    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
 
     # 模型配置
-    ANTHROPIC_MODEL: str = "claude-haiku-4-5"
-    VOYAGE_MODEL: str = "voyage-2"
-    COHERE_RERANK_MODEL: str = "rerank-english-v3.0"
+    DEEPSEEK_MODEL: str = "deepseek-v4-flash"
+    JINA_EMBEDDING_MODEL: str = "jina-embeddings-v4"
+    JINA_RERANKER_MODEL: str = "jina-reranker-v3"
 
     # 处理参数
     EMBEDDING_BATCH_SIZE: int = 128
@@ -90,14 +99,21 @@ class Config:
         else:
             load_dotenv()
 
+        # 读取新 API 密钥，向后兼容旧变量名
+        deepseek_key = os.getenv("DEEPSEEK_API_KEY", "") or os.getenv("ANTHROPIC_API_KEY", "")
+        jina_key = os.getenv("JINA_API_KEY", "") or os.getenv("VOYAGE_API_KEY", "") or os.getenv("COHERE_API_KEY", "")
+
         return cls(
+            DEEPSEEK_API_KEY=deepseek_key,
+            JINA_API_KEY=jina_key,
             ANTHROPIC_API_KEY=os.getenv("ANTHROPIC_API_KEY", ""),
             VOYAGE_API_KEY=os.getenv("VOYAGE_API_KEY", ""),
             COHERE_API_KEY=os.getenv("COHERE_API_KEY", ""),
             ELASTICSEARCH_URL=os.getenv("ELASTICSEARCH_URL", "http://localhost:9200"),
-            ANTHROPIC_MODEL=os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5"),
-            VOYAGE_MODEL=os.getenv("VOYAGE_MODEL", "voyage-2"),
-            COHERE_RERANK_MODEL=os.getenv("COHERE_RERANK_MODEL", "rerank-english-v3.0"),
+            DEEPSEEK_BASE_URL=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+            DEEPSEEK_MODEL=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+            JINA_EMBEDDING_MODEL=os.getenv("JINA_EMBEDDING_MODEL", "jina-embeddings-v3"),
+            JINA_RERANKER_MODEL=os.getenv("JINA_RERANKER_MODEL", "jina-reranker-v2-base-multilingual"),
             EMBEDDING_BATCH_SIZE=int(os.getenv("EMBEDDING_BATCH_SIZE", "128")),
             MAX_PARALLEL_THREADS=int(os.getenv("MAX_PARALLEL_THREADS", "5")),
             DEFAULT_K=int(os.getenv("DEFAULT_K", "20")),
@@ -123,14 +139,15 @@ class Config:
         抛出:
             ConfigurationError: 当必需的配置项缺失时
         """
-        if not self.ANTHROPIC_API_KEY:
-            raise ConfigurationError("ANTHROPIC_API_KEY is required")
+        if not self.DEEPSEEK_API_KEY:
+            raise ConfigurationError(
+                "DEEPSEEK_API_KEY is required (或设置 ANTHROPIC_API_KEY 向后兼容)"
+            )
 
-        if not self.VOYAGE_API_KEY:
-            raise ConfigurationError("VOYAGE_API_KEY is required")
-
-        if not self.COHERE_API_KEY:
-            raise ConfigurationError("COHERE_API_KEY is required")
+        if not self.JINA_API_KEY:
+            raise ConfigurationError(
+                "JINA_API_KEY is required (或设置 VOYAGE_API_KEY / COHERE_API_KEY 向后兼容)"
+            )
 
         # 验证权重和为 1
         if abs(self.SEMANTIC_WEIGHT + self.BM25_WEIGHT - 1.0) > 0.01:
@@ -158,9 +175,10 @@ class Config:
     def __str__(self) -> str:
         """返回配置的字符串表示（隐藏敏感信息）"""
         return f"""Config(
-    ANTHROPIC_MODEL={self.ANTHROPIC_MODEL},
-    VOYAGE_MODEL={self.VOYAGE_MODEL},
-    COHERE_RERANK_MODEL={self.COHERE_RERANK_MODEL},
+    DEEPSEEK_MODEL={self.DEEPSEEK_MODEL},
+    DEEPSEEK_BASE_URL={self.DEEPSEEK_BASE_URL},
+    JINA_EMBEDDING_MODEL={self.JINA_EMBEDDING_MODEL},
+    JINA_RERANKER_MODEL={self.JINA_RERANKER_MODEL},
     ELASTICSEARCH_URL={self.ELASTICSEARCH_URL},
     EMBEDDING_BATCH_SIZE={self.EMBEDDING_BATCH_SIZE},
     MAX_PARALLEL_THREADS={self.MAX_PARALLEL_THREADS},
