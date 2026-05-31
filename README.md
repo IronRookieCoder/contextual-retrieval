@@ -13,6 +13,7 @@
 - **Jina AI 重排序**: 使用 Jina Reranker v3 精细化结果排序，131K 上下文窗口
 - **完整评估系统**: 支持 Pass@k、Precision@k、Recall@k、MRR 等指标
 - **真实文档评估**: 从文件系统加载文档，自动分块、生成查询并评测
+- **Web 控制台**: FastAPI 本地 Web 界面，零依赖浏览器操作全流程
 
 ### 技术亮点
 
@@ -176,6 +177,26 @@ python -m src.cli evaluate-real \
   --include-agents
 ```
 
+### 6. Web 控制台
+
+启动本地 Web 界面，在浏览器中完成数据准备、索引构建、搜索和评估全流程：
+
+```bash
+python -m src.web.app
+```
+
+浏览器打开 http://127.0.0.1:8000，左侧导航栏提供五个面板：
+
+| 面板 | 功能 |
+|------|------|
+| 配置检查 | 自动检测 DeepSeek/Jina/Elasticsearch 连接状态 |
+| 数据准备 | 生成示例数据或处理真实文档目录 |
+| 索引构建 | 创建 base/contextual 向量索引并查看 token 统计 |
+| 检索重排 | base/contextual/hybrid 三种搜索 + Jina 重排序 |
+| 效果评估 | Pass@k / Precision / Recall / MRR 指标表格 |
+
+> Web 控制台是本地单机工具，密钥只读，索引沿用 `data/vector_dbs`，无需额外配置。
+
 ## Python API 使用
 
 ### 基础向量搜索
@@ -316,7 +337,13 @@ contextual-retrieval/
 │   ├── evaluation.py      # 评估系统
 │   ├── data_generator.py  # 数据生成器
 │   ├── real_data_loader.py # 真实文档加载器（分块、查询生成）
-│   └── cli.py             # 命令行接口
+│   ├── cli.py             # 命令行接口
+│   └── web/               # Web 控制台
+│       ├── app.py         # FastAPI 应用与路由
+│       ├── services.py    # 业务逻辑层
+│       ├── schemas.py     # 数据模型
+│       ├── templates/     # Jinja2 模板（7 个）
+│       └── static/        # CSS + JS
 ├── tests/                 # 测试套件
 ├── examples/              # 使用示例
 ├── data/                  # 数据目录
@@ -420,8 +447,8 @@ JINA_RERANKER_MODEL=jina-reranker-v3
 # 运行所有测试
 pytest tests/ -v
 
-# 运行特定测试
-pytest tests/test_vector_db.py -v
+# 运行 Web 控制台测试
+pytest tests/test_web_app.py tests/test_web_services.py -v
 
 # 测试覆盖率
 pytest tests/ --cov=src --cov-report=html
