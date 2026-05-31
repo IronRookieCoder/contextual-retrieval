@@ -1,7 +1,11 @@
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
 
 from src.web.services import (
     WebServiceError,
+    get_config_status,
     parse_k_values,
     redact_secrets,
     validate_hybrid_weights,
@@ -72,12 +76,6 @@ def test_redact_secrets_skips_short_secrets():
     message = "a b c"
     redacted = redact_secrets(message, ["a", "ab", "abc"])
     assert redacted == "a b c"
-
-
-from pathlib import Path
-from types import SimpleNamespace
-
-from src.web.services import get_config_status
 
 
 class FakeESClient:

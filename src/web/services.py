@@ -3,6 +3,7 @@ from typing import Callable, Iterable, List, Optional, Tuple
 
 from elasticsearch import Elasticsearch
 
+from src.config import Config
 from .schemas import ConfigStatus
 
 
@@ -61,7 +62,7 @@ def parse_k_values(raw: str) -> List[int]:
 
 
 def get_config_status(
-    config,
+    config: Config,
     es_client_factory: Optional[Callable[[str], object]] = None,
 ) -> ConfigStatus:
     warnings: List[str] = []
@@ -75,11 +76,16 @@ def get_config_status(
 
     factory = es_client_factory or (lambda url: Elasticsearch(url))
     elasticsearch_available = False
+    client = None
     try:
-        factory(config.ELASTICSEARCH_URL).info()
+        client = factory(config.ELASTICSEARCH_URL)
+        client.info()
         elasticsearch_available = True
     except Exception:
         warnings.append("Elasticsearch 不可用：混合搜索和混合评估将被禁用。")
+    finally:
+        if client is not None and es_client_factory is None:
+            client.close()
 
     return ConfigStatus(
         deepseek_configured=deepseek_configured,
