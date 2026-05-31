@@ -243,3 +243,73 @@ def test_load_dataset_from_path_rejects_non_list_json(tmp_path):
 
     with pytest.raises(WebServiceError, match="必须是文档列表"):
         load_dataset_from_path(str(dataset_path))
+
+
+from src.web.services import build_index
+
+
+class FakeBaseDB:
+    def __init__(self, name, config):
+        self.name = name
+        self.loaded_dataset = None
+        self.db_path = "data/vector_dbs/demo/vector_db.pkl"
+
+    def load_data(self, dataset):
+        self.loaded_dataset = dataset
+
+    def get_stats(self):
+        return {
+            "name": self.name,
+            "num_embeddings": 2,
+            "embedding_dim": 2048,
+            "cache_size": 0,
+            "db_path": "data/vector_dbs/demo/vector_db.pkl",
+        }
+
+
+class FakeContextualDB(FakeBaseDB):
+    def load_data(self, dataset, parallel_threads=None):
+        self.loaded_dataset = dataset
+        self.parallel_threads = parallel_threads
+
+    def get_token_stats(self):
+        return {"input_tokens": 100, "output_tokens": 10, "total_input_tokens": 100}
+
+
+def test_build_index_returns_base_summary(tmp_path):
+    dataset_path = tmp_path / "dataset.json"
+    dataset_path.write_text(json.dumps([{"doc_id": "doc_1", "chunks": [{"content": "x"}]}]), encoding="utf-8")
+
+    summary = build_index(
+        config=SimpleNamespace(),
+        name="demo_base",
+        method="base",
+        dataset_path=str(dataset_path),
+        parallel_threads=5,
+        base_db_cls=FakeBaseDB,
+        contextual_db_cls=FakeContextualDB,
+    )
+
+    assert summary.name == "demo_base"
+    assert summary.method == "base"
+    assert summary.num_embeddings == 2
+    assert summary.token_stats is None
+
+
+def test_build_index_returns_contextual_token_summary(tmp_path):
+    dataset_path = tmp_path / "dataset.json"
+    dataset_path.write_text(json.dumps([{"doc_id": "doc_1", "chunks": [{"content": "x"}]}]), encoding="utf-8")
+
+    summary = build_index(
+        config=SimpleNamespace(),
+        name="demo_contextual",
+        method="contextual",
+        dataset_path=str(dataset_path),
+        parallel_threads=3,
+        base_db_cls=FakeBaseDB,
+        contextual_db_cls=FakeContextualDB,
+    )
+
+    assert summary.name == "demo_contextual"
+    assert summary.method == "contextual"
+    assert summary.token_stats["input_tokens"] == 100

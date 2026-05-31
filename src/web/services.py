@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Type
@@ -6,9 +7,11 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Type
 from elasticsearch import Elasticsearch
 
 from src.config import Config
+from src.contextual_db import ContextualVectorDB
 from src.data_generator import DataGenerator
 from src.real_data_loader import DocumentLoader
-from .schemas import ConfigStatus
+from src.vector_db import VectorDBImpl
+from .schemas import ConfigStatus, IndexSummary
 
 
 class WebServiceError(Exception):
@@ -166,3 +169,39 @@ def process_real_directory(
         "chunks": sum(len(doc.get("chunks", [])) for doc in dataset),
         "queries": len(queries),
     }
+
+
+def build_index(
+    config,
+    name: str,
+    method: str,
+    dataset_path: str,
+    parallel_threads: int,
+    base_db_cls: Type[VectorDBImpl] = VectorDBImpl,
+    contextual_db_cls: Type[ContextualVectorDB] = ContextualVectorDB,
+) -> IndexSummary:
+    safe_name = validate_index_name(name)
+    if method not in {"base", "contextual"}:
+        raise WebServiceError("索引方法必须是 base 或 contextual。")
+
+    dataset = load_dataset_from_path(dataset_path)
+
+    db = base_db_cls(safe_name, config) if method == "base" else contextual_db_cls(safe_name, config)
+    existed_before = os.path.exists(db.db_path)
+    if method == "contextual":
+        db.load_data(dataset, parallel_threads=parallel_threads)
+    else:
+        db.load_data(dataset)
+
+    stats = db.get_stats()
+    token_stats = db.get_token_stats() if method == "contextual" else None
+    return IndexSummary(
+        name=stats["name"],
+        method=method,
+        num_embeddings=stats["num_embeddings"],
+        embedding_dim=stats["embedding_dim"],
+        cache_size=stats["cache_size"],
+        db_path=stats["db_path"],
+        loaded_from_disk=existed_before,
+        token_stats=token_stats,
+    )

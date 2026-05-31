@@ -10,6 +10,7 @@ from src.config import Config
 from src.web.schemas import Message
 from src.web.services import (
     WebServiceError,
+    build_index,
     get_config_status,
     prepare_sample_data,
     process_real_directory,
@@ -88,6 +89,33 @@ def create_app() -> FastAPI:
                 config=config,
                 messages=[Message("error", str(exc))],
             )
+
+    @app.post("/index", response_class=HTMLResponse)
+    async def create_index(
+        request: Request,
+        name: str = Form(...),
+        method: str = Form("contextual"),
+        dataset_path: str = Form("data/sample_dataset.json"),
+        parallel_threads: str = Form("5"),
+    ):
+        config = Config.from_env()
+        try:
+            summary = build_index(
+                config=config,
+                name=name,
+                method=method,
+                dataset_path=dataset_path,
+                parallel_threads=validate_positive_int(parallel_threads, "并行线程数"),
+            )
+            message = "已加载现有索引。" if summary.loaded_from_disk else "索引创建完成。"
+            return render_dashboard(
+                request,
+                messages=[Message("success", message)],
+                index_summary=summary,
+                config=config,
+            )
+        except WebServiceError as exc:
+            return render_dashboard(request, messages=[Message("error", str(exc))], config=config)
 
     return app
 
