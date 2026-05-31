@@ -1,0 +1,47 @@
+<section id="search" class="panel search-panel">
+  <div class="panel-head">
+    <h2>搜索与重排</h2>
+    <span class="tag">RRF / rerank</span>
+  </div>
+  <form method="post" action="/search" class="form-grid" data-wait>
+    <label class="field field-wide">
+      <span>查询</span>
+      <input name="query" value="How to implement authentication?" required>
+    </label>
+    <div class="field-row">
+      <label class="field"><span>索引名</span><input name="index_name" value="demo_contextual"></label>
+      <label class="field">
+        <span>方法</span>
+        <select name="method">
+          <option value="contextual">contextual</option>
+          <option value="base">base</option>
+          <option value="hybrid">hybrid</option>
+        </select>
+      </label>
+      <label class="field"><span>k</span><input name="k" value="10"></label>
+      <label class="field"><span>semantic</span><input name="semantic_weight" value="0.8"></label>
+      <label class="field"><span>BM25</span><input name="bm25_weight" value="0.2"></label>
+      <label class="field"><span>召回倍数</span><input name="recall_multiplier" value="10"></label>
+    </div>
+    <label class="checkline"><input type="checkbox" name="rerank" value="on" checked> 使用 Jina rerank</label>
+    <button type="submit">搜索</button>
+  </form>
+  <div class="results">
+    {% for result in search_results %}
+      <article class="search-result">
+        <div class="result-meta">
+          <strong>#{{ result.rank }} {{ result.doc_id }} / {{ result.chunk_id }}</strong>
+          <span>
+            {% if result.similarity is not none %}similarity {{ "%.3f"|format(result.similarity) }}{% endif %}
+            {% if result.score is not none %} score {{ "%.3f"|format(result.score) }}{% endif %}
+            {% if result.rerank_score is not none %} rerank {{ "%.3f"|format(result.rerank_score) }}{% endif %}
+          </span>
+        </div>
+        <p>{{ result.content }}</p>
+        {% if result.contextualized_content %}
+          <div class="context-box">{{ result.contextualized_content }}</div>
+        {% endif %}
+      </article>
+    {% endfor %}
+  </div>
+</section>

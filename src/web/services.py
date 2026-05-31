@@ -6,12 +6,15 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Type
 
 from elasticsearch import Elasticsearch
 
+from src.bm25_search import ElasticsearchBM25
 from src.config import Config
 from src.contextual_db import ContextualVectorDB
 from src.data_generator import DataGenerator
+from src.hybrid_search import HybridSearchEngine
 from src.real_data_loader import DocumentLoader
+from src.reranking import JinaReranker
 from src.vector_db import VectorDBImpl
-from .schemas import ConfigStatus, IndexSummary
+from .schemas import ConfigStatus, IndexSummary, SearchResultView
 
 
 class WebServiceError(Exception):
@@ -205,3 +208,111 @@ def build_index(
         loaded_from_disk=existed_before,
         token_stats=token_stats,
     )
+
+
+def normalize_search_results(results: List[Dict[str, Any]]) -> List[SearchResultView]:
+    normalized: List[SearchResultView] = []
+    for rank, result in enumerate(results, start=1):
+        if "metadata" in result:
+            metadata = result["metadata"]
+            content = metadata.get("original_content") or metadata.get("content", "")
+            normalized.append(
+                SearchResultView(
+                    rank=rank,
+                    doc_id=metadata.get("doc_id", ""),
+                    chunk_id=metadata.get("chunk_id", str(metadata.get("original_index", ""))),
+                    content=content,
+                    contextualized_content=metadata.get("contextualized_content", ""),
+                    similarity=result.get("similarity"),
+                    rerank_score=result.get("rerank_score"),
+                )
+            )
+            continue
+
+        chunk = result.get("chunk", result)
+        normalized.append(
+            SearchResultView(
+                rank=rank,
+                doc_id=chunk.get("doc_id", ""),
+                chunk_id=chunk.get("chunk_id", str(chunk.get("original_index", ""))),
+                content=chunk.get("original_content") or chunk.get("content", ""),
+                contextualized_content=chunk.get("contextualized_content", ""),
+                score=result.get("score", chunk.get("score")),
+                rerank_score=result.get("rerank_score"),
+                from_semantic=bool(result.get("from_semantic", False)),
+                from_bm25=bool(result.get("from_bm25", False)),
+            )
+        )
+    return normalized
+
+
+def run_search(
+    config,
+    query: str,
+    index_name: str,
+    method: str,
+    k: int,
+    semantic_weight: float,
+    bm25_weight: float,
+    rerank: bool,
+    recall_multiplier: int,
+    base_db_cls: Type[VectorDBImpl] = VectorDBImpl,
+    contextual_db_cls: Type[ContextualVectorDB] = ContextualVectorDB,
+    bm25_cls: Type[ElasticsearchBM25] = ElasticsearchBM25,
+    hybrid_engine_cls: Type[HybridSearchEngine] = HybridSearchEngine,
+    reranker_cls: Type[JinaReranker] = JinaReranker,
+) -> List[SearchResultView]:
+    safe_name = validate_index_name(index_name)
+    if not query.strip():
+        raise WebServiceError("查询不能为空。")
+    if method not in {"base", "contextual", "hybrid"}:
+        raise WebServiceError("搜索方法必须是 base、contextual 或 hybrid。")
+
+    if method == "base":
+        db = base_db_cls(safe_name, config)
+    else:
+        db = contextual_db_cls(safe_name, config)
+
+    try:
+        db.load_db()
+    except Exception as exc:
+        raise WebServiceError(f"无法加载索引 {safe_name}: {exc}") from exc
+
+    if rerank and method in {"base", "contextual"}:
+        results = reranker_cls(config=config).rerank_with_over_retrieval(
+            query,
+            db,
+            k=k,
+            recall_multiplier=recall_multiplier,
+        )
+        return normalize_search_results(results)
+
+    if method == "hybrid":
+        validate_hybrid_weights(semantic_weight, bm25_weight)
+        bm25 = bm25_cls(f"{safe_name}_bm25_web", config)
+        try:
+            bm25.index_documents(db.metadata)
+            engine = hybrid_engine_cls(
+                db,
+                bm25,
+                semantic_weight=semantic_weight,
+                bm25_weight=bm25_weight,
+                config=config,
+            )
+            results = engine.search(query, k=k)
+            if rerank:
+                documents = []
+                for item in results:
+                    chunk = item.get("chunk", {})
+                    documents.append(chunk.get("original_content") or chunk.get("content", ""))
+                reranked = reranker_cls(config=config).rerank(query, documents, top_n=k)
+                results = [{**results[item["index"]], "rerank_score": item["score"]} for item in reranked]
+            return normalize_search_results(results)
+        finally:
+            try:
+                bm25.delete_index()
+            except Exception:
+                pass
+
+    results = db.search(query, k=k)
+    return normalize_search_results(results)

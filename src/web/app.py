@@ -14,6 +14,7 @@ from src.web.services import (
     get_config_status,
     prepare_sample_data,
     process_real_directory,
+    run_search,
     validate_positive_int,
 )
 
@@ -112,6 +113,40 @@ def create_app() -> FastAPI:
                 request,
                 messages=[Message("success", message)],
                 index_summary=summary,
+                config=config,
+            )
+        except WebServiceError as exc:
+            return render_dashboard(request, messages=[Message("error", str(exc))], config=config)
+
+    @app.post("/search", response_class=HTMLResponse)
+    async def search(
+        request: Request,
+        query: str = Form(...),
+        index_name: str = Form("demo_contextual"),
+        method: str = Form("contextual"),
+        k: str = Form("10"),
+        semantic_weight: float = Form(0.8),
+        bm25_weight: float = Form(0.2),
+        rerank: str = Form("off"),
+        recall_multiplier: str = Form("10"),
+    ):
+        config = Config.from_env()
+        try:
+            results = run_search(
+                config=config,
+                query=query,
+                index_name=index_name,
+                method=method,
+                k=validate_positive_int(k, "返回数量"),
+                semantic_weight=semantic_weight,
+                bm25_weight=bm25_weight,
+                rerank=rerank == "on",
+                recall_multiplier=validate_positive_int(recall_multiplier, "重排召回倍数"),
+            )
+            return render_dashboard(
+                request,
+                messages=[Message("success", f"找到 {len(results)} 条结果。")],
+                search_results=results,
                 config=config,
             )
         except WebServiceError as exc:

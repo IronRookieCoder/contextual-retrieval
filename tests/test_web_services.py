@@ -314,3 +314,103 @@ def test_build_index_returns_contextual_token_summary(tmp_path):
     assert summary.method == "contextual"
     assert summary.loaded_from_disk is False
     assert summary.token_stats["input_tokens"] == 100
+
+
+from src.web.schemas import SearchResultView
+from src.web.services import normalize_search_results
+
+
+def test_normalize_base_search_result():
+    results = normalize_search_results([
+        {
+            "metadata": {
+                "doc_id": "doc_1",
+                "chunk_id": "chunk_1",
+                "content": "hello",
+            },
+            "similarity": 0.91,
+        }
+    ])
+
+    assert results[0].rank == 1
+    assert results[0].doc_id == "doc_1"
+    assert results[0].chunk_id == "chunk_1"
+    assert results[0].content == "hello"
+    assert results[0].similarity == 0.91
+
+
+def test_normalize_hybrid_and_reranked_result():
+    results = normalize_search_results([
+        {
+            "chunk": {
+                "doc_id": "doc_2",
+                "chunk_id": "chunk_2",
+                "original_content": "hybrid",
+                "contextualized_content": "context",
+            },
+            "score": 0.5,
+            "rerank_score": 0.99,
+            "from_semantic": True,
+            "from_bm25": False,
+        }
+    ])
+
+    assert results[0].doc_id == "doc_2"
+    assert results[0].content == "hybrid"
+    assert results[0].contextualized_content == "context"
+    assert results[0].score == 0.5
+    assert results[0].rerank_score == 0.99
+    assert results[0].from_semantic is True
+
+
+class FakeSearchDB:
+    def __init__(self, name, config):
+        self.name = name
+
+    def load_db(self):
+        self.loaded = True
+
+    def search(self, query, k=20):
+        return [
+            {
+                "metadata": {"doc_id": "doc_1", "chunk_id": "chunk_1", "content": query},
+                "similarity": 0.8,
+            }
+        ][:k]
+
+
+class FakeReranker:
+    def __init__(self, config=None):
+        self.config = config
+
+    def rerank_with_over_retrieval(self, query, vector_db, k=10, recall_multiplier=10):
+        return [
+            {
+                "metadata": {"doc_id": "doc_r", "chunk_id": "chunk_r", "content": query},
+                "similarity": 0.7,
+                "rerank_score": 0.99,
+            }
+        ]
+
+
+from src.web.services import run_search
+
+
+def test_run_search_uses_reranker_when_enabled():
+    results = run_search(
+        config=SimpleNamespace(),
+        query="auth",
+        index_name="demo",
+        method="contextual",
+        k=1,
+        semantic_weight=0.8,
+        bm25_weight=0.2,
+        rerank=True,
+        recall_multiplier=5,
+        base_db_cls=FakeSearchDB,
+        contextual_db_cls=FakeSearchDB,
+        reranker_cls=FakeReranker,
+    )
+
+    assert results[0].doc_id == "doc_r"
+    assert results[0].rerank_score == 0.99
