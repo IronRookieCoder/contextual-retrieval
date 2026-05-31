@@ -1,0 +1,39 @@
+<section id="data" class="panel">
+  <div class="panel-head">
+    <h2>数据准备</h2>
+    <span class="tag">local paths</span>
+  </div>
+  <form method="post" action="/data" class="form-grid" data-wait>
+    <label class="field">
+      <span>模式</span>
+      <select name="mode">
+        <option value="sample">生成示例数据</option>
+        <option value="real">处理真实文档目录</option>
+      </select>
+    </label>
+    <label class="field">
+      <span>运行名</span>
+      <input name="run_name" value="real_eval">
+    </label>
+    <label class="field field-wide">
+      <span>真实文档目录</span>
+      <input name="data_dir" placeholder="D:\docs\retrieval-demo">
+    </label>
+    <div class="field-row">
+      <label class="field"><span>文档数</span><input name="num_docs" value="10"></label>
+      <label class="field"><span>每文档块数</span><input name="chunks_per_doc" value="5"></label>
+      <label class="field"><span>查询数</span><input name="num_queries" value="20"></label>
+      <label class="field"><span>每文档查询数</span><input name="queries_per_doc" value="3"></label>
+    </div>
+    <button type="submit">准备数据</button>
+  </form>
+  {% if data_result %}
+    <div class="result-box">
+      <strong>{{ data_result.documents }}</strong> documents ·
+      <strong>{{ data_result.chunks }}</strong> chunks ·
+      <strong>{{ data_result.queries }}</strong> queries
+      <div>{{ data_result.dataset_path }}</div>
+      <div>{{ data_result.queries_path }}</div>
+    </div>
+  {% endif %}
+</section>

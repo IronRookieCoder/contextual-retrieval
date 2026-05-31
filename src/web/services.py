@@ -1,9 +1,13 @@
+import json
 import re
-from typing import Callable, Iterable, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Type
 
 from elasticsearch import Elasticsearch
 
 from src.config import Config
+from src.data_generator import DataGenerator
+from src.real_data_loader import DocumentLoader
 from .schemas import ConfigStatus
 
 
@@ -100,3 +104,65 @@ def get_config_status(
         vector_db_dir=config.VECTOR_DB_DIR,
         warnings=warnings,
     )
+
+
+def load_dataset_from_path(dataset_path: str) -> List[Dict[str, Any]]:
+    path = Path(dataset_path)
+    if not path.exists() or not path.is_file():
+        raise WebServiceError(f"数据集文件不存在: {path}")
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except json.JSONDecodeError as exc:
+        raise WebServiceError(f"数据集 JSON 无法解析: {path}") from exc
+    if not isinstance(data, list):
+        raise WebServiceError("数据集 JSON 必须是文档列表。")
+    return data
+
+
+def prepare_sample_data(
+    config,
+    num_docs: int,
+    chunks_per_doc: int,
+    num_queries: int,
+    generator_cls: Type[DataGenerator] = DataGenerator,
+) -> Dict[str, Any]:
+    generator = generator_cls(config)
+    dataset = generator.generate_dataset(
+        num_docs=num_docs,
+        chunks_per_doc=chunks_per_doc,
+    )
+    queries = generator.generate_queries(dataset, num_queries=num_queries)
+    dataset_path = generator.save_dataset(dataset)
+    queries_path = generator.save_queries(queries)
+    return {
+        "dataset_path": dataset_path,
+        "queries_path": queries_path,
+        "documents": len(dataset),
+        "chunks": sum(len(doc.get("chunks", [])) for doc in dataset),
+        "queries": len(queries),
+    }
+
+
+def process_real_directory(
+    config,
+    data_dir: str,
+    name: str,
+    queries_per_doc: int,
+    loader_cls: Type[DocumentLoader] = DocumentLoader,
+) -> Dict[str, Any]:
+    path = Path(data_dir)
+    if not path.exists() or not path.is_dir():
+        raise WebServiceError(f"文档目录不存在: {path}")
+    safe_name = validate_index_name(name)
+    loader = loader_cls(config)
+    dataset, queries = loader.process_directory(str(path), num_per_doc=queries_per_doc)
+    dataset_path = loader.save_dataset(dataset, safe_name)
+    queries_path = loader.save_queries(queries, safe_name)
+    return {
+        "dataset_path": dataset_path,
+        "queries_path": queries_path,
+        "documents": len(dataset),
+        "chunks": sum(len(doc.get("chunks", [])) for doc in dataset),
+        "queries": len(queries),
+    }
