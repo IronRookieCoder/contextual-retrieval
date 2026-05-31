@@ -124,3 +124,16 @@ def test_evaluation_route_renders_mock_metrics(monkeypatch):
     assert response.status_code == 200
     assert "80.00%" in response.text
     assert "report text" in response.text
+
+
+def test_dashboard_references_static_assets(monkeypatch):
+    from src.web import app as web_app
+
+    monkeypatch.setattr(web_app, "get_config_status", lambda config: None)
+    client = TestClient(web_app.create_app())
+
+    response = client.get("/")
+
+    assert 'href="/static/app.css"' in response.text
+    assert 'src="/static/app.js"' in response.text
+

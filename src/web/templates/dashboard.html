@@ -3,24 +3,47 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Contextual Retrieval</title>
+    <title>Contextual Retrieval Console</title>
+    <link rel="stylesheet" href="/static/app.css">
   </head>
   <body>
-    <h1>Contextual Retrieval</h1>
-    <nav>
-      <a href="#config">配置检查</a>
-      <a href="#data">数据准备</a>
-      <a href="#index">索引构建</a>
-      <a href="#search">检索重排</a>
-      <a href="#evaluation">效果评估</a>
-    </nav>
-    <main>
-      {% include "_messages.html" %}
-      {% include "_config_panel.html" %}
-      {% include "_data_panel.html" %}
-      {% include "_index_panel.html" %}
-      {% include "_search_panel.html" %}
-      {% include "_evaluation_panel.html" %}
-    </main>
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true"></div>
+          <div>
+            <h1>Contextual Retrieval</h1>
+            <p>Developer console · synchronous local workflow</p>
+          </div>
+        </div>
+        <div class="top-status">
+          <span class="status-pill {% if config_status and config_status.deepseek_configured %}ok{% else %}warn{% endif %}">DeepSeek</span>
+          <span class="status-pill {% if config_status and config_status.jina_configured %}ok{% else %}warn{% endif %}">Jina</span>
+          <span class="status-pill {% if config_status and config_status.elasticsearch_available %}ok{% else %}warn{% endif %}">Elasticsearch</span>
+        </div>
+      </header>
+
+      <aside class="sidebar">
+        <p class="side-title">Pipeline</p>
+        <a href="#config">01 配置检查</a>
+        <a href="#data">02 数据准备</a>
+        <a href="#index">03 索引构建</a>
+        <a href="#search">04 检索重排</a>
+        <a href="#evaluation">05 效果评估</a>
+        <p class="side-note">本地单机控制台。密钥只读，索引沿用 data/vector_dbs。</p>
+      </aside>
+
+      <main class="workspace">
+        {% include "_messages.html" %}
+        <div class="section-grid">
+          {% include "_config_panel.html" %}
+          {% include "_data_panel.html" %}
+          {% include "_index_panel.html" %}
+          {% include "_search_panel.html" %}
+          {% include "_evaluation_panel.html" %}
+        </div>
+      </main>
+    </div>
+    <script src="/static/app.js"></script>
   </body>
 </html>
