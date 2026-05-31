@@ -83,3 +83,44 @@ def test_search_route_renders_mock_results(monkeypatch):
 
     assert response.status_code == 200
     assert "result content" in response.text
+
+
+def test_evaluation_route_renders_mock_metrics(monkeypatch):
+    from src.web import app as web_app
+
+    monkeypatch.setattr(web_app, "get_config_status", lambda config: None)
+    monkeypatch.setattr(
+        web_app,
+        "run_evaluation",
+        lambda **kwargs: SimpleNamespace(
+            method_name="contextual",
+            rows=[
+                {
+                    "k": 5,
+                    "pass_at_k": 0.8,
+                    "precision": 0.4,
+                    "recall": 0.6,
+                    "mrr": 0.7,
+                    "valid_queries": 2,
+                }
+            ],
+            report="report text",
+        ),
+    )
+    client = TestClient(web_app.create_app())
+
+    response = client.post(
+        "/evaluation",
+        data={
+            "index_name": "demo",
+            "method": "contextual",
+            "queries_path": "data/sample_queries.jsonl",
+            "k_values": "5",
+            "semantic_weight": "0.8",
+            "bm25_weight": "0.2",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "80.00%" in response.text
+    assert "report text" in response.text

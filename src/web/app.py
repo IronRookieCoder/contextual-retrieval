@@ -12,8 +12,10 @@ from src.web.services import (
     WebServiceError,
     build_index,
     get_config_status,
+    parse_k_values,
     prepare_sample_data,
     process_real_directory,
+    run_evaluation,
     run_search,
     validate_positive_int,
 )
@@ -147,6 +149,36 @@ def create_app() -> FastAPI:
                 request,
                 messages=[Message("success", f"找到 {len(results)} 条结果。")],
                 search_results=results,
+                config=config,
+            )
+        except WebServiceError as exc:
+            return render_dashboard(request, messages=[Message("error", str(exc))], config=config)
+
+    @app.post("/evaluation", response_class=HTMLResponse)
+    async def evaluation(
+        request: Request,
+        index_name: str = Form("demo_contextual"),
+        method: str = Form("contextual"),
+        queries_path: str = Form("data/sample_queries.jsonl"),
+        k_values: str = Form("5 10 20"),
+        semantic_weight: float = Form(0.8),
+        bm25_weight: float = Form(0.2),
+    ):
+        config = Config.from_env()
+        try:
+            table = run_evaluation(
+                config=config,
+                index_name=index_name,
+                method=method,
+                queries_path=queries_path,
+                k_values=parse_k_values(k_values),
+                semantic_weight=semantic_weight,
+                bm25_weight=bm25_weight,
+            )
+            return render_dashboard(
+                request,
+                messages=[Message("success", "评估完成。")],
+                evaluation=table,
                 config=config,
             )
         except WebServiceError as exc:

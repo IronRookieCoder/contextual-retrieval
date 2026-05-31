@@ -14,7 +14,8 @@ from src.hybrid_search import HybridSearchEngine
 from src.real_data_loader import DocumentLoader
 from src.reranking import JinaReranker
 from src.vector_db import VectorDBImpl
-from .schemas import ConfigStatus, IndexSummary, SearchResultView
+from src.evaluation import Evaluator
+from .schemas import ConfigStatus, EvaluationTable, IndexSummary, SearchResultView
 
 
 class WebServiceError(Exception):
@@ -316,3 +317,96 @@ def run_search(
 
     results = db.search(query, k=k)
     return normalize_search_results(results)
+
+
+def format_evaluation_table(
+    method_name: str,
+    results: Dict[int, Dict[str, Any]],
+    report: str,
+) -> EvaluationTable:
+    rows = []
+    for k in sorted(results.keys()):
+        item = results[k]
+        rows.append(
+            {
+                "k": k,
+                "pass_at_k": item["pass_at_k"],
+                "precision": item["precision"],
+                "recall": item["recall"],
+                "mrr": item["mrr"],
+                "valid_queries": item["valid_queries"],
+            }
+        )
+    return EvaluationTable(method_name=method_name, rows=rows, report=report)
+
+
+def run_evaluation(
+    config,
+    index_name: str,
+    method: str,
+    queries_path: str,
+    k_values: List[int],
+    semantic_weight: float,
+    bm25_weight: float,
+    evaluator_cls: Type[Evaluator] = Evaluator,
+    base_db_cls: Type[VectorDBImpl] = VectorDBImpl,
+    contextual_db_cls: Type[ContextualVectorDB] = ContextualVectorDB,
+    bm25_cls: Type[ElasticsearchBM25] = ElasticsearchBM25,
+    hybrid_engine_cls: Type[HybridSearchEngine] = HybridSearchEngine,
+) -> EvaluationTable:
+    safe_name = validate_index_name(index_name)
+    path = Path(queries_path)
+    if not path.exists() or not path.is_file():
+        raise WebServiceError(f"查询文件不存在: {path}")
+    if method not in {"base", "contextual", "hybrid"}:
+        raise WebServiceError("评估方法必须是 base、contextual 或 hybrid。")
+
+    evaluator = evaluator_cls(config)
+    queries = evaluator.load_queries(str(path))
+
+    if method == "base":
+        db = base_db_cls(safe_name, config)
+        db.load_db()
+        results = evaluator.evaluate(
+            queries,
+            lambda query, k: db.search(query, k=k),
+            k_values=k_values,
+            method_name=method,
+        )
+    elif method == "contextual":
+        db = contextual_db_cls(safe_name, config)
+        db.load_db()
+        results = evaluator.evaluate(
+            queries,
+            lambda query, k: db.search(query, k=k),
+            k_values=k_values,
+            method_name=method,
+        )
+    else:
+        validate_hybrid_weights(semantic_weight, bm25_weight)
+        db = contextual_db_cls(safe_name, config)
+        db.load_db()
+        bm25 = bm25_cls(f"{safe_name}_bm25_eval_web", config)
+        try:
+            bm25.index_documents(db.metadata)
+            engine = hybrid_engine_cls(
+                db,
+                bm25,
+                semantic_weight=semantic_weight,
+                bm25_weight=bm25_weight,
+                config=config,
+            )
+            results = evaluator.evaluate_hybrid(
+                queries,
+                engine,
+                k_values=k_values,
+                method_name="hybrid",
+            )
+        finally:
+            try:
+                bm25.delete_index()
+            except Exception:
+                pass
+
+    report = evaluator.generate_report(results, method)
+    return format_evaluation_table(method, results, report)

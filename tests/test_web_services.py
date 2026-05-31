@@ -8,6 +8,7 @@ from src.web.schemas import SearchResultView
 from src.web.services import (
     WebServiceError,
     build_index,
+    format_evaluation_table,
     get_config_status,
     load_dataset_from_path,
     normalize_search_results,
@@ -390,6 +391,27 @@ class FakeReranker:
                 "rerank_score": 0.99,
             }
         ]
+
+
+def test_format_evaluation_table_creates_rows_and_report():
+    table = format_evaluation_table(
+        method_name="contextual",
+        results={
+            5: {
+                "pass_at_k": 0.8,
+                "precision": 0.4,
+                "recall": 0.6,
+                "mrr": 0.7,
+                "valid_queries": 3,
+            }
+        },
+        report="report text",
+    )
+
+    assert table.method_name == "contextual"
+    assert table.rows[0]["k"] == 5
+    assert table.rows[0]["pass_at_k"] == 0.8
+    assert table.report == "report text"
 
 
 def test_run_search_uses_reranker_when_enabled():
