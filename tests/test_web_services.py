@@ -4,15 +4,18 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.web.schemas import SearchResultView
 from src.web.services import (
     WebServiceError,
     build_index,
     get_config_status,
     load_dataset_from_path,
+    normalize_search_results,
     parse_k_values,
     prepare_sample_data,
     process_real_directory,
     redact_secrets,
+    run_search,
     validate_hybrid_weights,
     validate_index_name,
     validate_positive_int,
@@ -316,10 +319,6 @@ def test_build_index_returns_contextual_token_summary(tmp_path):
     assert summary.token_stats["input_tokens"] == 100
 
 
-from src.web.schemas import SearchResultView
-from src.web.services import normalize_search_results
-
-
 def test_normalize_base_search_result():
     results = normalize_search_results([
         {
@@ -391,9 +390,6 @@ class FakeReranker:
                 "rerank_score": 0.99,
             }
         ]
-
-
-from src.web.services import run_search
 
 
 def test_run_search_uses_reranker_when_enabled():

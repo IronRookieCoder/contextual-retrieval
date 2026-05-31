@@ -42,6 +42,8 @@
           <div class="context-box">{{ result.contextualized_content }}</div>
         {% endif %}
       </article>
+    {% else %}
+      <p class="empty-result">没有找到匹配的结果。</p>
     {% endfor %}
   </div>
 </section>
