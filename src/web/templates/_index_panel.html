@@ -1,0 +1,40 @@
+<section id="index" class="panel">
+  <div class="panel-head">
+    <h2>索引构建</h2>
+    <span class="tag">pickle db</span>
+  </div>
+  <form method="post" action="/index" class="form-grid" data-wait>
+    <div class="field-row">
+      <label class="field"><span>索引名</span><input name="name" value="demo_contextual" required></label>
+      <label class="field">
+        <span>方法</span>
+        <select name="method">
+          <option value="contextual">contextual</option>
+          <option value="base">base</option>
+        </select>
+      </label>
+      <label class="field"><span>线程</span><input name="parallel_threads" value="5"></label>
+    </div>
+    <label class="field field-wide">
+      <span>Dataset JSON</span>
+      <input name="dataset_path" value="data/sample_dataset.json">
+    </label>
+    <button type="submit">创建或加载索引</button>
+  </form>
+  {% if index_summary %}
+    <div class="stats">
+      <div class="stat"><span>名称</span><strong>{{ index_summary.name }}</strong></div>
+      <div class="stat"><span>方法</span><strong>{{ index_summary.method }}</strong></div>
+      <div class="stat"><span>向量数</span><strong>{{ index_summary.num_embeddings }}</strong></div>
+      <div class="stat"><span>维度</span><strong>{{ index_summary.embedding_dim }}</strong></div>
+      <div class="stat stat-wide"><span>路径</span><strong>{{ index_summary.db_path }}</strong></div>
+    </div>
+    {% if index_summary.token_stats %}
+      <div class="result-box">
+        DeepSeek tokens:
+        input {{ index_summary.token_stats.input_tokens }},
+        output {{ index_summary.token_stats.output_tokens }}
+      </div>
+    {% endif %}
+  {% endif %}
+</section>

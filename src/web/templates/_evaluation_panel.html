@@ -1,0 +1,47 @@
+<section id="evaluation" class="panel">
+  <div class="panel-head">
+    <h2>效果评估</h2>
+    <span class="tag">Pass@k</span>
+  </div>
+  <form method="post" action="/evaluation" class="form-grid" data-wait>
+    <div class="field-row">
+      <label class="field"><span>索引名</span><input name="index_name" value="demo_contextual"></label>
+      <label class="field">
+        <span>方法</span>
+        <select name="method">
+          <option value="contextual">contextual</option>
+          <option value="base">base</option>
+          <option value="hybrid">hybrid</option>
+        </select>
+      </label>
+      <label class="field"><span>k 值</span><input name="k_values" value="5 10 20"></label>
+      <label class="field"><span>semantic</span><input name="semantic_weight" value="0.8"></label>
+      <label class="field"><span>BM25</span><input name="bm25_weight" value="0.2"></label>
+    </div>
+    <label class="field field-wide">
+      <span>Queries JSONL</span>
+      <input name="queries_path" value="data/sample_queries.jsonl">
+    </label>
+    <button type="submit">运行评估</button>
+  </form>
+  {% if evaluation %}
+    <table class="eval-table">
+      <thead>
+        <tr><th>k</th><th>Pass@k</th><th>Precision</th><th>Recall</th><th>MRR</th><th>Valid</th></tr>
+      </thead>
+      <tbody>
+        {% for row in evaluation.rows %}
+          <tr>
+            <td>{{ row.k }}</td>
+            <td>{{ "%.2f%%"|format(row.pass_at_k * 100) }}</td>
+            <td>{{ "%.2f%%"|format(row.precision * 100) }}</td>
+            <td>{{ "%.2f%%"|format(row.recall * 100) }}</td>
+            <td>{{ "%.4f"|format(row.mrr) }}</td>
+            <td>{{ row.valid_queries }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <pre class="report">{{ evaluation.report }}</pre>
+  {% endif %}
+</section>

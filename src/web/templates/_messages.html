@@ -1,0 +1,7 @@
+{% if messages %}
+  <div class="messages">
+    {% for message in messages %}
+      <div class="message message-{{ message.level }}">{{ message.text }}</div>
+    {% endfor %}
+  </div>
+{% endif %}
