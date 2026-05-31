@@ -6,6 +6,7 @@ import pytest
 
 from src.web.services import (
     WebServiceError,
+    build_index,
     get_config_status,
     load_dataset_from_path,
     parse_k_values,
@@ -16,6 +17,34 @@ from src.web.services import (
     validate_index_name,
     validate_positive_int,
 )
+
+
+class FakeBaseDB:
+    def __init__(self, name, config):
+        self.name = name
+        self.loaded_dataset = None
+        self.db_path = "data/vector_dbs/demo/vector_db.pkl"
+
+    def load_data(self, dataset):
+        self.loaded_dataset = dataset
+
+    def get_stats(self):
+        return {
+            "name": self.name,
+            "num_embeddings": 2,
+            "embedding_dim": 2048,
+            "cache_size": 0,
+            "db_path": "data/vector_dbs/demo/vector_db.pkl",
+        }
+
+
+class FakeContextualDB(FakeBaseDB):
+    def load_data(self, dataset, parallel_threads=None):
+        self.loaded_dataset = dataset
+        self.parallel_threads = parallel_threads
+
+    def get_token_stats(self):
+        return {"input_tokens": 100, "output_tokens": 10, "total_input_tokens": 100}
 
 
 def test_validate_index_name_accepts_safe_names():
@@ -245,36 +274,6 @@ def test_load_dataset_from_path_rejects_non_list_json(tmp_path):
         load_dataset_from_path(str(dataset_path))
 
 
-from src.web.services import build_index
-
-
-class FakeBaseDB:
-    def __init__(self, name, config):
-        self.name = name
-        self.loaded_dataset = None
-        self.db_path = "data/vector_dbs/demo/vector_db.pkl"
-
-    def load_data(self, dataset):
-        self.loaded_dataset = dataset
-
-    def get_stats(self):
-        return {
-            "name": self.name,
-            "num_embeddings": 2,
-            "embedding_dim": 2048,
-            "cache_size": 0,
-            "db_path": "data/vector_dbs/demo/vector_db.pkl",
-        }
-
-
-class FakeContextualDB(FakeBaseDB):
-    def load_data(self, dataset, parallel_threads=None):
-        self.loaded_dataset = dataset
-        self.parallel_threads = parallel_threads
-
-    def get_token_stats(self):
-        return {"input_tokens": 100, "output_tokens": 10, "total_input_tokens": 100}
-
 
 def test_build_index_returns_base_summary(tmp_path):
     dataset_path = tmp_path / "dataset.json"
@@ -293,6 +292,7 @@ def test_build_index_returns_base_summary(tmp_path):
     assert summary.name == "demo_base"
     assert summary.method == "base"
     assert summary.num_embeddings == 2
+    assert summary.loaded_from_disk is False
     assert summary.token_stats is None
 
 
@@ -312,4 +312,5 @@ def test_build_index_returns_contextual_token_summary(tmp_path):
 
     assert summary.name == "demo_contextual"
     assert summary.method == "contextual"
+    assert summary.loaded_from_disk is False
     assert summary.token_stats["input_tokens"] == 100
