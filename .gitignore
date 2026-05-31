@@ -186,6 +186,8 @@ logs/
 *.log
 .env.*
 !.env.example
+.worktrees
+.worktrees/
 
 # Temporary files
 *.tmp
