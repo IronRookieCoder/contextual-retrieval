@@ -72,3 +72,63 @@ def test_redact_secrets_skips_short_secrets():
     message = "a b c"
     redacted = redact_secrets(message, ["a", "ab", "abc"])
     assert redacted == "a b c"
+
+
+from pathlib import Path
+from types import SimpleNamespace
+
+from src.web.services import get_config_status
+
+
+class FakeESClient:
+    def info(self):
+        return {"cluster_name": "test"}
+
+
+class BrokenESClient:
+    def info(self):
+        raise RuntimeError("connection refused")
+
+
+def test_get_config_status_reports_available_services():
+    config = SimpleNamespace(
+        DEEPSEEK_API_KEY="sk-deepseek",
+        JINA_API_KEY="jina-key",
+        ELASTICSEARCH_URL="http://localhost:9200",
+        DEEPSEEK_MODEL="deepseek-chat",
+        DEEPSEEK_BASE_URL="https://api.deepseek.com",
+        JINA_EMBEDDING_MODEL="jina-embeddings-v3",
+        JINA_RERANKER_MODEL="jina-reranker-v2-base-multilingual",
+        DATA_DIR=Path("data"),
+        VECTOR_DB_DIR=Path("data/vector_dbs"),
+    )
+
+    status = get_config_status(config, es_client_factory=lambda url: FakeESClient())
+
+    assert status.deepseek_configured is True
+    assert status.jina_configured is True
+    assert status.elasticsearch_available is True
+    assert status.warnings == []
+
+
+def test_get_config_status_reports_missing_keys_and_es_warning():
+    config = SimpleNamespace(
+        DEEPSEEK_API_KEY="",
+        JINA_API_KEY="",
+        ELASTICSEARCH_URL="http://localhost:9200",
+        DEEPSEEK_MODEL="deepseek-chat",
+        DEEPSEEK_BASE_URL="https://api.deepseek.com",
+        JINA_EMBEDDING_MODEL="jina-embeddings-v3",
+        JINA_RERANKER_MODEL="jina-reranker-v2-base-multilingual",
+        DATA_DIR=Path("data"),
+        VECTOR_DB_DIR=Path("data/vector_dbs"),
+    )
+
+    status = get_config_status(config, es_client_factory=lambda url: BrokenESClient())
+
+    assert status.deepseek_configured is False
+    assert status.jina_configured is False
+    assert status.elasticsearch_available is False
+    assert any("DEEPSEEK_API_KEY 未配置" in w for w in status.warnings)
+    assert any("JINA_API_KEY 未配置" in w for w in status.warnings)
+    assert any("Elasticsearch 不可用" in w for w in status.warnings)

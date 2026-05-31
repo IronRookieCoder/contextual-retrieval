@@ -6,6 +6,9 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from src.config import Config
+from src.web.services import get_config_status
+
 
 WEB_DIR = Path(__file__).resolve().parent
 TEMPLATES = Jinja2Templates(directory=str(WEB_DIR / "templates"))
@@ -21,10 +24,14 @@ def create_app() -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request):
+        config = Config.from_env()
         return TEMPLATES.TemplateResponse(
             request,
             "dashboard.html",
-            {"messages": []},
+            {
+                "messages": [],
+                "config_status": get_config_status(config),
+            },
         )
 
     return app

@@ -1,5 +1,9 @@
 import re
-from typing import Iterable, List, Tuple
+from typing import Callable, Iterable, List, Optional, Tuple
+
+from elasticsearch import Elasticsearch
+
+from .schemas import ConfigStatus
 
 
 class WebServiceError(Exception):
@@ -54,3 +58,39 @@ def parse_k_values(raw: str) -> List[int]:
     for part in parts:
         values.append(validate_positive_int(part, "k 值"))
     return values
+
+
+def get_config_status(
+    config,
+    es_client_factory: Optional[Callable[[str], object]] = None,
+) -> ConfigStatus:
+    warnings: List[str] = []
+    deepseek_configured = bool(config.DEEPSEEK_API_KEY)
+    jina_configured = bool(config.JINA_API_KEY)
+
+    if not deepseek_configured:
+        warnings.append("DEEPSEEK_API_KEY 未配置：上下文索引不可用。")
+    if not jina_configured:
+        warnings.append("JINA_API_KEY 未配置：向量索引、搜索和重排不可用。")
+
+    factory = es_client_factory or (lambda url: Elasticsearch(url))
+    elasticsearch_available = False
+    try:
+        factory(config.ELASTICSEARCH_URL).info()
+        elasticsearch_available = True
+    except Exception:
+        warnings.append("Elasticsearch 不可用：混合搜索和混合评估将被禁用。")
+
+    return ConfigStatus(
+        deepseek_configured=deepseek_configured,
+        jina_configured=jina_configured,
+        elasticsearch_url=config.ELASTICSEARCH_URL,
+        elasticsearch_available=elasticsearch_available,
+        deepseek_model=config.DEEPSEEK_MODEL,
+        deepseek_base_url=config.DEEPSEEK_BASE_URL,
+        jina_embedding_model=config.JINA_EMBEDDING_MODEL,
+        jina_reranker_model=config.JINA_RERANKER_MODEL,
+        data_dir=config.DATA_DIR,
+        vector_db_dir=config.VECTOR_DB_DIR,
+        warnings=warnings,
+    )

@@ -1,0 +1,37 @@
+<section id="config" class="panel">
+  <div class="panel-head">
+    <h2>配置检查</h2>
+    <span class="tag {% if config_status.deepseek_configured and config_status.jina_configured %}tag-ok{% else %}tag-warn{% endif %}">
+      {% if config_status.deepseek_configured and config_status.jina_configured %}READY{% else %}CHECK{% endif %}
+    </span>
+  </div>
+  <div class="status-grid">
+    <div class="status-card">
+      <span>DeepSeek</span>
+      <strong>{{ "已配置" if config_status.deepseek_configured else "未配置" }}</strong>
+      <small>{{ config_status.deepseek_model }}</small>
+    </div>
+    <div class="status-card">
+      <span>Jina AI</span>
+      <strong>{{ "已配置" if config_status.jina_configured else "未配置" }}</strong>
+      <small>{{ config_status.jina_embedding_model }}</small>
+    </div>
+    <div class="status-card">
+      <span>Elasticsearch</span>
+      <strong>{{ "可用" if config_status.elasticsearch_available else "不可用" }}</strong>
+      <small>{{ config_status.elasticsearch_url }}</small>
+    </div>
+    <div class="status-card">
+      <span>Vector DB</span>
+      <strong>本地</strong>
+      <small>{{ config_status.vector_db_dir }}</small>
+    </div>
+  </div>
+  {% if config_status.warnings %}
+    <ul class="warning-list">
+      {% for warning in config_status.warnings %}
+        <li>{{ warning }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>
