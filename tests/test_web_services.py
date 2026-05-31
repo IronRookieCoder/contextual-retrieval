@@ -51,3 +51,24 @@ def test_redact_secrets_replaces_secret_values():
     assert "sk-real-secret" not in redacted
     assert "jina-real-secret" not in redacted
     assert "[REDACTED]" in redacted
+
+
+def test_redact_secrets_overlapping_keys_longer_first():
+    """Longer secrets must be redacted even when they contain shorter substrings."""
+    redacted = redact_secrets("token sk-real-secret expired", ["sk-real", "sk-real-secret"])
+    assert "sk-real-secret" not in redacted
+    assert "[REDACTED]" in redacted
+
+
+def test_redact_secrets_empty_iterable():
+    """Empty iterable should return the original message unchanged."""
+    message = "some message with a token"
+    redacted = redact_secrets(message, [])
+    assert redacted == message
+
+
+def test_redact_secrets_skips_short_secrets():
+    """Secrets shorter than 4 characters must be ignored."""
+    message = "a b c"
+    redacted = redact_secrets(message, ["a", "ab", "abc"])
+    assert redacted == "a b c"

@@ -11,9 +11,9 @@ SAFE_INDEX_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 def redact_secrets(message: str, secrets: Iterable[str]) -> str:
     redacted = message
-    for secret in secrets:
-        if secret and len(secret) >= 4:
-            redacted = redacted.replace(secret, "[REDACTED]")
+    sorted_secrets = sorted((s for s in secrets if s and len(s) >= 4), key=len, reverse=True)
+    for secret in sorted_secrets:
+        redacted = redacted.replace(secret, "[REDACTED]")
     return redacted
 
 
@@ -52,11 +52,5 @@ def parse_k_values(raw: str) -> List[int]:
 
     values: List[int] = []
     for part in parts:
-        try:
-            value = int(part)
-        except ValueError as exc:
-            raise WebServiceError("k 值必须是正整数。") from exc
-        if value <= 0:
-            raise WebServiceError("k 值必须是正整数。")
-        values.append(value)
+        values.append(validate_positive_int(part, "k 值"))
     return values
