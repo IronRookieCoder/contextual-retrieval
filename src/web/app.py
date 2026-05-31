@@ -29,8 +29,8 @@ def create_app() -> FastAPI:
         name="static",
     )
 
-    def render_dashboard(request: Request, messages=None, **context):
-        config = Config.from_env()
+    def render_dashboard(request: Request, messages=None, config=None, **context):
+        config = config or Config.from_env()
         base_context = {
             "request": request,
             "messages": messages or [],
@@ -78,12 +78,14 @@ def create_app() -> FastAPI:
                 raise WebServiceError("数据模式必须是 sample 或 real。")
             return render_dashboard(
                 request,
+                config=config,
                 messages=[Message("success", "数据准备完成。")],
                 data_result=result,
             )
         except WebServiceError as exc:
             return render_dashboard(
                 request,
+                config=config,
                 messages=[Message("error", str(exc))],
             )
 

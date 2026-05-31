@@ -10,6 +10,7 @@ from src.web.services import (
     load_dataset_from_path,
     parse_k_values,
     prepare_sample_data,
+    process_real_directory,
     redact_secrets,
     validate_hybrid_weights,
     validate_index_name,
@@ -180,3 +181,65 @@ def test_prepare_sample_data_calls_generator():
     assert result["queries_path"] == "data/sample_queries.jsonl"
     assert result["documents"] == 1
     assert result["queries"] == 1
+
+
+class FakeDocumentLoader:
+    def __init__(self, config):
+        self.config = config
+
+    def process_directory(self, dir_path, num_per_doc=3):
+        return (
+            [{"doc_id": "real_doc", "chunks": [{"content": "real chunk"}]}],
+            [{"query": "test", "golden_documents": []}],
+        )
+
+    def save_dataset(self, dataset, name):
+        return f"data/{name}_dataset.json"
+
+    def save_queries(self, queries, name):
+        return f"data/{name}_queries.jsonl"
+
+
+def test_process_real_directory_calls_loader(tmp_path):
+    data_dir = tmp_path / "real_docs"
+    data_dir.mkdir()
+
+    result = process_real_directory(
+        config=SimpleNamespace(),
+        data_dir=str(data_dir),
+        name="real_eval",
+        queries_per_doc=3,
+        loader_cls=FakeDocumentLoader,
+    )
+
+    assert result["documents"] == 1
+    assert result["chunks"] == 1
+    assert result["queries"] == 1
+    assert result["dataset_path"] == "data/real_eval_dataset.json"
+
+
+def test_process_real_directory_rejects_missing_dir(tmp_path):
+    with pytest.raises(WebServiceError, match="文档目录不存在"):
+        process_real_directory(
+            config=SimpleNamespace(),
+            data_dir=str(tmp_path / "missing"),
+            name="test",
+            queries_per_doc=3,
+            loader_cls=FakeDocumentLoader,
+        )
+
+
+def test_load_dataset_from_path_rejects_invalid_json(tmp_path):
+    dataset_path = tmp_path / "bad.json"
+    dataset_path.write_text("not valid json", encoding="utf-8")
+
+    with pytest.raises(WebServiceError, match="JSON 无法解析"):
+        load_dataset_from_path(str(dataset_path))
+
+
+def test_load_dataset_from_path_rejects_non_list_json(tmp_path):
+    dataset_path = tmp_path / "obj.json"
+    dataset_path.write_text(json.dumps({"not": "a list"}), encoding="utf-8")
+
+    with pytest.raises(WebServiceError, match="必须是文档列表"):
+        load_dataset_from_path(str(dataset_path))
